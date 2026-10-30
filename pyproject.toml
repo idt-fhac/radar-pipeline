@@ -1,0 +1,20 @@
+[project]
+name = "radar"
+version = "0.1.0"
+description = "Data pipeline of the RADAR project: reproducible LLM-based extraction of decision criteria and their salience weights from online discussions (YouTube, Reddit) as a basis for multi-criteria decision analysis."
+readme = "README.md"
+authors = [
+    { name = "jlnzll", email = "249779164+jlnzll@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "sqlalchemy>=2.1.6",
+]
+
+[project.scripts]
+radar = "radar:main"
+
+[build-system]
+requires = ["uv_build>=0.10.8,<0.11.0"]
+build-backend = "uv_build"
