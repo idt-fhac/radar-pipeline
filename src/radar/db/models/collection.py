@@ -9,7 +9,7 @@ topic_search_query = Table(
     'topic_search_query',
     Base.metadata,
     Column('topic_id', ForeignKey('topic.id'), primary_key=True),
-    Column('search_query_id', ForeignKey('search_query.id'), primary_key=True),
+    Column('search_query_id', ForeignKey('search_query.id'), primary_key=True, index=True),
 )
 
 
@@ -84,7 +84,7 @@ class Finding(Base):
     __tablename__ = 'finding'
 
     collection_run_id: Mapped[int] = mapped_column(ForeignKey('collection_run.id'), primary_key=True)
-    container_id: Mapped[int] = mapped_column(ForeignKey('container.id'), primary_key=True)
+    container_id: Mapped[int] = mapped_column(ForeignKey('container.id'), primary_key=True, index=True)
     rank: Mapped[int] = mapped_column()
 
     collection_run: Mapped['CollectionRun'] = relationship(
@@ -139,7 +139,7 @@ class Snapshot(Base):
     __tablename__ = 'snapshot'
 
     post_id: Mapped[int] = mapped_column(ForeignKey('post.id'), primary_key=True)
-    collection_run_id: Mapped[int] = mapped_column(ForeignKey('collection_run.id'), primary_key=True)
+    collection_run_id: Mapped[int] = mapped_column(ForeignKey('collection_run.id'), primary_key=True, index=True)
     likes: Mapped[int] = mapped_column()
     reply_count: Mapped[int] = mapped_column()
     updated_at: Mapped[datetime | None] = mapped_column()
