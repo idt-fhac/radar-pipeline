@@ -23,6 +23,10 @@ class Topic(Base):
         secondary = topic_search_query, back_populates = 'topics', lazy = 'raise'
     )
 
+    samples: Mapped[list['Sample']] = relationship(
+        back_populates = 'topic', lazy = 'raise'
+    )
+
 
 class SearchQuery(Base):
     __tablename__ = "search_query"
@@ -134,6 +138,17 @@ class Post(Base):
     children: Mapped[list['Post']] = relationship(
         back_populates = 'parent', lazy = 'raise'
     )
+
+    samples: Mapped[list['Sample']] = relationship(
+        secondary = 'sample_post', back_populates = 'posts', lazy = 'raise'
+    )
+    batch_posts: Mapped[list['BatchPost']] = relationship(
+        back_populates = 'post', lazy = 'raise'
+    )
+    annotations: Mapped[list['Annotation']] = relationship(
+        back_populates = 'post', lazy = 'raise'
+    )
+
 
 class Snapshot(Base):
     __tablename__ = 'snapshot'
