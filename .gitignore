@@ -1,0 +1,33 @@
+# Datenbank und Daten: enthalten Kommentartexte und Pseudonyme, gehoeren nie ins Repo
+data/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.csv
+
+# Zugangsdaten und Schluessel
+.env
+salt.bin
+*_key*.txt
+api_key.txt
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+
+# Betriebssystem
+Thumbs.db
+.DS_Store
