@@ -81,6 +81,9 @@ class AnnotationRun(Base):
     annotations: Mapped[list['Annotation']] = relationship(
         back_populates = 'annotation_run', lazy = 'raise'
     )
+    mapping_runs: Mapped[list['MappingRun']] = relationship(
+        secondary = 'mapping_input', back_populates = 'annotation_runs', lazy = 'raise'
+    )
 
 
 class LlmRun(Base):
@@ -182,4 +185,7 @@ class CriterionMention(Base):
 
     annotation: Mapped['Annotation'] = relationship(
         back_populates = 'criterion_mentions', lazy = 'raise'
+    )
+    assignments: Mapped[list['Assignment']] = relationship(
+        back_populates = 'mention', lazy = 'raise'
     )
