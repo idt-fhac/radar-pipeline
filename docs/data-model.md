@@ -100,7 +100,7 @@ erDiagram
                      datetime started_at }
     llm_run { int run_id PK, FK
               string requested_model
-              string model "as returned by the API"
+              string model "as returned by the API, NULL until first response"
               float temperature
               int batch_size
               string context_strategy
@@ -108,22 +108,22 @@ erDiagram
     human_run { int run_id PK, FK
                 string annotator }
     batch { int id PK
-            int run_id FK
-            int number
+            int run_id FK, UK
+            int number UK
             string status
-            json raw_response }
+            json raw_response "NULL if the request failed" }
     batch_post { int batch_id PK, FK
                  int post_id PK, FK
                  int position }
     annotation { int run_id PK, FK
                  int post_id PK, FK
-                 string stance }
+                 string stance "NULL if not asked for" }
     criterion_mention { int id PK
                         int run_id FK "composite FK to annotation"
                         int post_id FK "composite FK to annotation"
                         string label
-                        string sentiment
-                        string quote }
+                        string sentiment "nullable"
+                        string quote "nullable" }
 ```
 
 ## Block 3: Mapping (`mapping.py`)
@@ -133,7 +133,7 @@ Criterion labels from different runs name the same thing differently ("CO2", "cl
 ```mermaid
 erDiagram
     embedding_config ||--o{ embedding : produces
-    embedding_config ||--o{ mapping_run : "is used by"
+    embedding_config |o--o{ mapping_run : "is used by"
     mapping_run ||--o{ mapping_input : ""
     annotation_run ||--o{ mapping_input : "provides mentions"
     mapping_run ||--o{ criterion : defines
@@ -150,9 +150,9 @@ erDiagram
                 string input "rendered text sent to the model"
                 blob vector }
     mapping_run { int id PK
-                  int embedding_config_id FK
+                  int embedding_config_id FK "NULL for llm or manual mapping"
                   string method
-                  float threshold
+                  float threshold "NULL if the method has none"
                   json params
                   string code_version
                   datetime created_at }
