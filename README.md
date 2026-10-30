@@ -22,6 +22,8 @@ The pipeline is a research tool. It collects public discussions on a topic, extr
 | Mapping | Embeds criterion labels and clusters them into canonical criteria | `embedding_config`, `embedding`, `mapping_run`, `criterion`, `assignment` |
 | Analysis | Salience weights and time series, computed as SQL views | — |
 
+The full data model with diagrams is documented in [docs/data-model.md](docs/data-model.md).
+
 ## Design principles
 
 1. **Raw data is append-only.** Collected data is never overwritten; repeated collection adds new snapshots.
@@ -73,6 +75,7 @@ radar-pipeline/
 │           ├── collection.py   # collection stage
 │           ├── annotation.py   # sampling and annotation stage
 │           └── mapping.py      # mapping stage
+├── docs/                    # documentation, data model diagrams
 ├── migrations/              # Alembic migrations
 └── data/                    # local database (not in the repository)
 ```
