@@ -21,7 +21,7 @@ class EmbeddingConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     model: Mapped[str] = mapped_column()
-    template: Mapped[str] = mapped_column()  # e.g. 'Topic: {topic}. Criterion: {label}'
+    template: Mapped[str] = mapped_column()  # example: 'Topic: {topic}. Criterion: {label}'
 
     embeddings: Mapped[list['Embedding']] = relationship(
         back_populates = 'config', lazy = 'raise'
