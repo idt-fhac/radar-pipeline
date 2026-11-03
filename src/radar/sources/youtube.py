@@ -132,18 +132,15 @@ def get_comments(video_id, max_threads=MAX_THREADS_PER_VIDEO, order=COMMENT_ORDE
         raise ValueError(f'unknown order: {order!r}')
     if replies not in ('all', 'included', 'none'):
         raise ValueError(f'unknown replies setting: {replies!r}')
-
     comments = []
     for thread in get_threads(video_id, max_threads, order):
         top = thread['snippet']['topLevelComment']
         total = thread['snippet']['totalReplyCount']
         top['totalReplyCount'] = total
         comments.append(top)
-
         included = thread.get('replies', {}).get('comments', [])
         if replies == 'included':
             comments.extend(included)
         elif replies == 'all':
-            # the included replies are complete if the thread has no more than those
             comments.extend(included if total <= len(included) else get_all_replies(top['id']))
     return comments
