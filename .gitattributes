@@ -1,0 +1,3 @@
+# Store text files with LF line endings and check them out with LF on every
+# platform, so that Windows editors and Linux tools produce identical files.
+* text=auto eol=lf
