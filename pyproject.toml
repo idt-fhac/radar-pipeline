@@ -3,6 +3,8 @@ name = "radar"
 version = "0.1.0"
 description = "Data pipeline of the RADAR project: reproducible LLM-based extraction of decision criteria and their salience weights from online discussions (YouTube, Reddit) as a basis for multi-criteria decision analysis."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "jlnzll", email = "249779164+jlnzll@users.noreply.github.com" }
 ]
