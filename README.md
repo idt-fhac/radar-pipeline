@@ -91,3 +91,7 @@ radar-pipeline/
 - Code, identifiers and database names are in English.
 - All timestamps are stored in UTC.
 - JSON columns are serialised with sorted keys so that equal parameters compare equal.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
