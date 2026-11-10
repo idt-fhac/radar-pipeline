@@ -1,16 +1,15 @@
 # provenance.py — which code produced a result
 
 import subprocess
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from radar import ROOT
 
 # Only changes here alter what a pipeline run executes; tests or docs do not.
 CODE_PATHS = ['src', 'migrations']
 
 
 def git(*args):
-    return subprocess.run(['git', *args], cwd=REPO_ROOT, capture_output=True,
+    return subprocess.run(['git', *args], cwd=ROOT, capture_output=True,
                           text=True, check=True).stdout.strip()
 
 
