@@ -47,7 +47,7 @@ class PromptVersion(Base):
     __tablename__ = 'prompt_version'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column()
+    name: Mapped[str] = mapped_column(unique=True)
     text: Mapped[str] = mapped_column()
     hash: Mapped[str] = mapped_column(unique=True)
 
