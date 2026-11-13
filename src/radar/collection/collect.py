@@ -77,7 +77,9 @@ def collect_youtube(topic_name, search_term, max_videos = youtube.MAX_VIDEOS, ma
 def get_or_create_topic(session, name):
     topic = session.scalar(select(Topic).where(Topic.name == name).options(selectinload(Topic.search_queries)))
     if topic is None:
-        topic = Topic(name=name)
+        # empty list = collection counts as loaded; otherwise the autoflush before the next
+        # query turns it into an unloaded collection and lazy='raise' refuses to load it
+        topic = Topic(name=name, search_queries=[])
         session.add(topic)
     return topic
 
