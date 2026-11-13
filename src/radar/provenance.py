@@ -13,7 +13,7 @@ def git(*args):
                           text=True, check=True).stdout.strip()
 
 
-def code_version(allow_dirty=False):
+def get_code_version(allow_dirty=False):
     """Return the Git commit of the running code, to be stored as code_version.
 
     With uncommitted changes in the code paths the commit hash would not describe the
