@@ -1,0 +1,110 @@
+# llm_client.py — the only module that talks to an LLM (OpenAI-compatible APIs: KI:connect, IDT).
+# Knows no database: takes a prompt and plain dicts, returns plain dicts.
+
+import json
+import logging
+import os
+import re
+
+from openai import OpenAI, OpenAIError
+
+logger = logging.getLogger(__name__)
+
+# Every provider speaks the OpenAI chat API; only address, key and model names differ.
+# The provider of a run is stored in llm_run.params (decided 16.11.: no own column,
+# nobody needs to filter by it): the same model name can mean a different deployment elsewhere.
+PROVIDERS = {
+    'kiconnect': {'base_url': 'https://chat.kiconnect.nrw/api/v1', 'key_env': 'KI_API_KEY',
+                  'default_model': 'qwen-qwen3-8-27b'},
+    'idt':       {'base_url': 'https://chat.idt.fh-aachen.de/api/v1', 'key_env': 'IDT_API_KEY',
+                  'default_model': 'qwen3-8-flash-next-int4'},
+}
+DEFAULT_PROVIDER = 'idt'
+DEFAULT_TEMPERATURE = 0.0  # as deterministic as the API allows; repeated runs measure the rest
+TIMEOUT = 120              # seconds per request; large batches take a while
+MAX_RETRIES = 3            # the SDK retries connection errors, 429 and 5xx with backoff
+
+# Some models wrap their JSON in a Markdown code fence despite being told not to.
+CODE_FENCE = re.compile(r'^```(?:json)?\s*(.*?)\s*```$', re.DOTALL)
+
+_clients = {}  # one client per provider, created on first use
+
+
+def get_client(provider):
+    """Create the API client of a provider once and reuse it (keeps the HTTP connection open)."""
+    if provider not in PROVIDERS:
+        raise ValueError(f'unknown provider {provider!r}, known: {", ".join(PROVIDERS)}')
+    if provider not in _clients:
+        config = PROVIDERS[provider]
+        _clients[provider] = OpenAI(base_url=config['base_url'], api_key=os.environ[config['key_env']],
+                                    timeout=TIMEOUT, max_retries=MAX_RETRIES)
+    return _clients[provider]
+
+
+def list_models(provider=DEFAULT_PROVIDER):
+    """Return the model ids a provider offers (to look up the exact name for a run)."""
+    return sorted(model.id for model in get_client(provider).models.list())
+
+
+def render_prompt(template, topic):
+    """Insert the topic into a prompt template.
+
+    str.replace instead of str.format: the template contains JSON braces,
+    which format() would try to interpret as placeholders.
+    """
+    return template.replace('{THEMA}', topic)
+
+
+def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=None,
+                   temperature=DEFAULT_TEMPERATURE):
+    """Send one batch of comments and return the answer.
+
+    :param system_prompt: rendered prompt (see render_prompt)
+    :param items: list of dicts as the prompt describes them, e.g. {'id': 17, 'text': '...'}
+    :param provider: key of PROVIDERS
+    :param model: model id at that provider; None means the provider's default model
+    :return: dict with
+        'model':   model name as reported by the API (can differ from the requested one)
+        'raw':     the complete API response as a dict (for batch.raw_response), None on error
+        'content': the answer text, None on error
+        'parsed':  the answer as JSON (dict), None if it is not valid JSON
+        'error':   None, or a short description of what went wrong
+    Never raises for API or parsing problems: a failed batch is recorded and resent later.
+    """
+    model = model or PROVIDERS[provider]['default_model']
+    user_message = json.dumps(items, ensure_ascii=False)  # keep umlauts readable, fewer tokens
+    try:
+        response = get_client(provider).chat.completions.create(
+            model=model,
+            temperature=temperature,
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_message},
+            ],
+        )
+    except OpenAIError as error:
+        logger.warning('request failed: %s', error)
+        return {'model': None, 'raw': None, 'content': None, 'parsed': None,
+                'error': f'{type(error).__name__}: {error}'}
+
+    content = response.choices[0].message.content or ''
+    result = {'model': response.model, 'raw': response.model_dump(mode='json'),
+              'content': content, 'parsed': None, 'error': None}
+    try:
+        result['parsed'] = parse_json(content)
+    except ValueError as error:
+        logger.warning('answer is not valid JSON: %s', error)
+        result['error'] = f'invalid JSON: {error}'
+    return result
+
+
+def parse_json(content):
+    """Parse the model's answer as a JSON object, tolerating a Markdown code fence around it."""
+    text = content.strip()
+    match = CODE_FENCE.match(text)
+    if match:
+        text = match.group(1)
+    data = json.loads(text)  # json.JSONDecodeError is a subclass of ValueError
+    if not isinstance(data, dict):
+        raise ValueError(f'expected a JSON object, got {type(data).__name__}')
+    return data
