@@ -14,10 +14,11 @@ live = pytest.mark.skipif(not LIVE, reason='set RADAR_LIVE_TESTS=1 to call the r
 
 
 class FakeClient:
-    """Stands in for the OpenAI client: returns a fixed answer or raises a fixed error."""
+    """Stands in for the OpenAI client: streams a fixed answer in chunks or raises a fixed error."""
 
-    def __init__(self, content=None, error=None, model='fake-model'):
+    def __init__(self, content=None, error=None, model='fake-model', reasoning='Ich denke nach. ', chunk_size=7):
         self.content, self.error, self.model = content, error, model
+        self.reasoning, self.chunk_size = reasoning, chunk_size
         self.calls = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
@@ -25,10 +26,20 @@ class FakeClient:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
-        message = SimpleNamespace(content=self.content)
-        response = SimpleNamespace(model=self.model, choices=[SimpleNamespace(message=message)])
-        response.model_dump = lambda mode: {'model': self.model, 'content': self.content}
-        return response
+        return self.chunks()
+
+    def chunks(self):
+        def chunk(content=None, reasoning=None, finish_reason=None, usage=None):
+            delta = SimpleNamespace(content=content, reasoning=reasoning)
+            choices = [] if usage else [SimpleNamespace(delta=delta, finish_reason=finish_reason)]
+            return SimpleNamespace(model=self.model, choices=choices, usage=usage)
+        yield chunk(reasoning=self.reasoning)
+        text = self.content or ''
+        for start in range(0, len(text), self.chunk_size):
+            yield chunk(content=text[start:start + self.chunk_size])
+        yield chunk(finish_reason='stop')
+        usage = SimpleNamespace(model_dump=lambda mode: {'completion_tokens': 42})
+        yield chunk(usage=usage)
 
 
 @pytest.fixture
@@ -101,6 +112,17 @@ def test_annotate_batch_sends_to_provider_default_model(provider, fake):
     assert call['messages'][0] == {'role': 'system', 'content': 'system'}
     assert 'ätzend' in call['messages'][1]['content']  # umlauts not escaped
     assert result['parsed'] == {'ergebnisse': []} and result['error'] is None
+
+
+def test_annotate_batch_joins_stream(fake):
+    client = fake(content='{"ergebnisse": [{"id": 1, "position": "dafuer", "kriterien": []}]}')
+    result = annotate_batch('system', [{'id': 1, 'text': 'x'}])
+    assert client.calls[0]['stream'] is True
+    assert result['parsed']['ergebnisse'][0]['position'] == 'dafuer'
+    message = result['raw']['choices'][0]['message']
+    assert message['reasoning'] == 'Ich denke nach. '
+    assert result['raw']['usage'] == {'completion_tokens': 42}
+    assert result['raw']['choices'][0]['finish_reason'] == 'stop'
 
 
 def test_annotate_batch_explicit_model(fake):
