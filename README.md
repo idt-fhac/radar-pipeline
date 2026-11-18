@@ -90,34 +90,21 @@ uv run pytest
 
 ## Usage
 
-No command-line interface yet; the stages are called from Python.
+All stages are run with the `radar` command (`uv run radar --help`, `uv run radar <command> --help`).
+`--db prod` selects the production database (default: test); `--sql` logs every SQL statement.
 
-```python
-from radar.db.engine import Session
-from radar.collection.collect import collect_youtube
-from radar.sampling.sample import create_sample, create_subset
-
-# 1. Collect: search YouTube and store videos and comments (refuses a dirty Git tree)
-collect_youtube('E-Auto', 'Verbrenner-Aus', max_videos=25)
-
-# 2. Sample: load, filter (empty, short, duplicate posts) and freeze; the caller commits
-with Session() as session:
-    create_sample(session, 'e-auto-main', 'E-Auto')
-    create_subset(session, 'e-auto-300', 'e-auto-main', 300, seed=42)
-    session.commit()
+```bash
+uv run radar collect "E-Auto" "Verbrenner-Aus" --max-videos 25   # search YouTube, store videos and comments
+uv run radar sample e-auto-main "E-Auto"                          # load, filter, freeze (prints the attrition)
+uv run radar subset e-auto-300 e-auto-main 300 --seed 42          # reproducible random subset
+uv run radar run e-auto-300 extraction_v1 --context text+video_title   # LLM annotation run
+uv run radar resume 7                                             # continue an aborted run
+uv run radar runs                                                 # list runs
+uv run radar show 7                                               # results: stance, criteria, quotes
+uv run radar models kiconnect                                     # model ids of a provider
 ```
 
-LLM access (no database involved):
-
-```python
-from radar import ROOT
-from radar.annotation.llm_client import annotate_batch, list_models, render_prompt
-
-template = (ROOT / 'prompts' / 'extraction_v1.txt').read_text(encoding='utf-8')
-result = annotate_batch(render_prompt(template, 'E-Auto'), [{'id': 1, 'text': '...'}])
-result['parsed'], result['error']
-list_models('idt')  # model ids of a provider
-```
+`run` options: `--provider idt|kiconnect`, `--model`, `--temperature`, `--batch-size`, `--context text|text+video_title`, `--thinking/--no-thinking`, `--max-rounds`, `--workers`. Unset options use the defaults in the code. Every command that stores something refuses to run with uncommitted code changes unless `--allow-dirty` is given.
 
 Prompts live in `prompts/` and are stored as prompt versions under their file name. A prompt that has been used in a run must not be edited; save changes as a new file (e.g. `extraction_v2.txt`).
 
