@@ -109,6 +109,17 @@ def test_annotate_batch_explicit_model(fake):
     assert client.calls[0]['model'] == 'other-model'
 
 
+@pytest.mark.parametrize('thinking, expected', [
+    (False, {'chat_template_kwargs': {'enable_thinking': False}}),
+    (True, {'chat_template_kwargs': {'enable_thinking': True}}),
+    (None, {}),
+])
+def test_annotate_batch_thinking_switch(fake, thinking, expected):
+    client = fake(content='{"ergebnisse": []}')
+    annotate_batch('system', [], thinking=thinking)
+    assert client.calls[0]['extra_body'] == expected
+
+
 def test_annotate_batch_connection_error_does_not_raise(fake):
     fake(error=APIConnectionError(request=None))
     result = annotate_batch('system', [{'id': 1, 'text': 'x'}])
@@ -139,3 +150,13 @@ def test_live_annotate_batch(provider):
     assert result['error'] is None, result['error']
     assert result['model']  # reported name may differ from the requested alias (KI:connect)
     assert isinstance(result['parsed'], dict)
+
+
+@live
+@pytest.mark.parametrize('provider', PROVIDERS)
+def test_live_thinking_can_be_switched_off(provider):
+    result = annotate_batch('Antworte ausschließlich mit {"ergebnisse": []}.',
+                            [{'id': 1, 'text': 'Test'}], provider=provider, thinking=False)
+    assert result['error'] is None, result['error']
+    details = result['raw']['usage'].get('completion_tokens_details') or {}
+    assert not details.get('reasoning_tokens'), f'{details.get("reasoning_tokens")} reasoning tokens despite thinking=False'

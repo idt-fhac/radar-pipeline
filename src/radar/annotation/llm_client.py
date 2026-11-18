@@ -53,13 +53,16 @@ def render_prompt(template, topic):
 
 
 def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=None,
-                   temperature=DEFAULT_TEMPERATURE):
+                   temperature=DEFAULT_TEMPERATURE, thinking=None):
     """Send one batch of comments and return the answer.
 
     :param system_prompt: rendered prompt (see render_prompt)
     :param items: list of dicts as the prompt describes them, e.g. {'id': 17, 'text': '...'}
     :param provider: key of PROVIDERS
     :param model: model id at that provider; None means the provider's default model
+    :param thinking: True/False switches the reasoning phase of Qwen models on/off
+        (chat_template_kwargs.enable_thinking, tested with IDT 18.11.); None sends nothing,
+        the provider's default applies
     :return: dict with
         'model':   model name as reported by the API (can differ from the requested one)
         'raw':     the complete API response as a dict (for batch.raw_response), None on error
@@ -70,6 +73,7 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
     """
     model = model or PROVIDERS[provider]['default_model']
     user_message = json.dumps(items, ensure_ascii=False)
+    extra_body = {} if thinking is None else {'chat_template_kwargs': {'enable_thinking': thinking}}
     try:
         response = get_client(provider).chat.completions.create(
             model=model,
@@ -78,6 +82,7 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_message},
             ],
+            extra_body=extra_body,
         )
     except OpenAIError as error:
         logger.warning('request failed: %s', error)
