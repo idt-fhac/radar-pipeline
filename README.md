@@ -57,9 +57,16 @@ KI_API_KEY=...      # KI:connect.NRW (alternative provider)
 SALT_HEX=...        # key for pseudonymisation, e.g. python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
+There are two databases: `data/radar-test.db` (default, for development and test runs) and `data/radar.db` (production). Production has to be chosen explicitly:
+
+```powershell
+$env:RADAR_DB = "prod"          # PowerShell; stays set for this terminal
+Remove-Item Env:RADAR_DB        # back to the test database
+```
+
 `SALT_HEX` must never change once real data has been collected, otherwise the same person gets a new pseudonym.
 
-Create the database schema:
+Create the database schema (once per database):
 
 ```bash
 uv run alembic upgrade head
@@ -73,7 +80,7 @@ uv run alembic revision --autogenerate -m "short description"
 uv run alembic upgrade head
 ```
 
-All paths (database `data/radar.db`, `prompts/`) are built from the repository root, so commands work from any directory.
+All paths (databases under `data/`, `prompts/`) are built from the repository root, so commands work from any directory.
 
 Run the tests:
 
