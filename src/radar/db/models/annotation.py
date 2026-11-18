@@ -91,8 +91,7 @@ class LlmRun(Base):
 
     # primary key and foreign key at once: one llm_run per annotation_run
     run_id: Mapped[int] = mapped_column(ForeignKey('annotation_run.id'), primary_key=True)
-    requested_model: Mapped[str] = mapped_column()
-    model: Mapped[str | None] = mapped_column()  # as returned by the API, None until the first response
+    model: Mapped[str] = mapped_column()
     temperature: Mapped[float] = mapped_column()
     batch_size: Mapped[int] = mapped_column()
     context_strategy: Mapped[str] = mapped_column()
