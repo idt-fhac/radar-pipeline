@@ -152,6 +152,7 @@ def process_run(session, annotation_run, *, max_rounds=MAX_ROUNDS, workers=WORKE
     settings = {'provider': llm_run.params['provider'], 'model': llm_run.model,
                 'temperature': llm_run.temperature}
 
+    reported_model = None
     for round_number in range(1, max_rounds + 1):
         posts = open_posts(session, annotation_run)
         if not posts:
@@ -168,7 +169,9 @@ def process_run(session, annotation_run, *, max_rounds=MAX_ROUNDS, workers=WORKE
                        for batch, chunk in zip(batches, chunks)}
             for future in as_completed(futures):
                 batch, chunk = futures[future]
-                store_result(session, llm_run, batch, chunk, *future.result())
+                result, annotations, problems = future.result()
+                reported_model = check_reported_model(llm_run, batch, result['model'], reported_model)
+                store_result(session, llm_run, batch, chunk, result, annotations, problems)
 
     remaining = len(open_posts(session, annotation_run))
     if remaining:
@@ -223,15 +226,30 @@ def send_batch(system_prompt, items, settings):
     return result, annotations, problems
 
 
+def check_reported_model(llm_run, batch, reported, previous):
+    """Warn once if the API reports another model than requested, and whenever it changes within a run.
+
+    Some providers map the requested name to the deployment behind it (KI:connect:
+    'qwen-qwen3-8-27b' -> 'Qwen/Qwen3.8-27B'), so a difference alone is no error and is
+    reported only for the first answer; a change between batches may mean a model swap.
+    The reported name is stored per batch in raw_response either way.
+    :return: the model to compare the next batch with
+    """
+    if reported is None:
+        return previous
+    if previous is None and reported != llm_run.model:
+        logger.warning('batch %s: answered by %r, requested %r', batch.number, reported, llm_run.model)
+    elif previous is not None and reported != previous:
+        logger.warning('batch %s: model changed within the run from %r to %r', batch.number, previous, reported)
+    return reported
+
+
 def store_result(session, llm_run, batch, items, result, annotations, problems):
     """Write the outcome of one batch in the main thread and commit.
 
     Sets batch.raw_response and batch.status ('done', 'partial', 'invalid' or 'error'),
-    adds Annotation + CriterionMention rows, warns if the reported model differs from the requested one.
+    adds Annotation + CriterionMention rows.
     """
-    if result['model'] is not None and result['model'] != llm_run.model:
-        logger.warning('batch %s: answered by %r, requested %r', batch.number, result['model'], llm_run.model)
-
     for post_id, annotation in annotations.items():
         session.add(Annotation(
             run_id=llm_run.run_id,
