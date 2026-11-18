@@ -17,7 +17,7 @@ from radar.provenance import get_code_version
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE= 20
-DEFAULT_THINKING = False
+DEFAULT_THINKING = True
 MAX_ROUNDS = 3
 WORKERS = 3
 

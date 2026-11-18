@@ -16,9 +16,9 @@ PROVIDERS = {
     'idt':       {'base_url': 'https://chat.idt.fh-aachen.de/api/v1', 'key_env': 'IDT_API_KEY',
                   'default_model': 'qwen3-8-flash-next-int4'},
 }
-DEFAULT_PROVIDER = 'idt'
+DEFAULT_PROVIDER = 'kiconnect'
 DEFAULT_TEMPERATURE = 0.0
-TIMEOUT = 120
+TIMEOUT = 600
 MAX_RETRIES = 3
 
 # just in the case of the model wrapping the JSON
