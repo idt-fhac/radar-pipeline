@@ -124,7 +124,7 @@ class Batch(Base):
     run_id: Mapped[int] = mapped_column(ForeignKey('llm_run.run_id'), index=True)
     number: Mapped[int] = mapped_column()
     status: Mapped[str] = mapped_column()
-    raw_response: Mapped[dict | None] = mapped_column(JSON)  # None if the request failed
+    raw_response: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))  # SQL NULL if the request failed
 
     llm_run: Mapped['LlmRun'] = relationship(
         back_populates = 'batches', lazy = 'raise'
