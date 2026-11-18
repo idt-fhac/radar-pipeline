@@ -10,9 +10,6 @@ from openai import OpenAI, OpenAIError
 
 logger = logging.getLogger(__name__)
 
-# Every provider speaks the OpenAI chat API; only address, key and model names differ.
-# The provider of a run is stored in llm_run.params (decided 16.11.: no own column,
-# nobody needs to filter by it): the same model name can mean a different deployment elsewhere.
 PROVIDERS = {
     'kiconnect': {'base_url': 'https://chat.kiconnect.nrw/api/v1', 'key_env': 'KI_API_KEY',
                   'default_model': 'qwen-qwen3-8-27b'},
@@ -20,14 +17,14 @@ PROVIDERS = {
                   'default_model': 'qwen3-8-flash-next-int4'},
 }
 DEFAULT_PROVIDER = 'idt'
-DEFAULT_TEMPERATURE = 0.0  # as deterministic as the API allows; repeated runs measure the rest
-TIMEOUT = 120              # seconds per request; large batches take a while
-MAX_RETRIES = 3            # the SDK retries connection errors, 429 and 5xx with backoff
+DEFAULT_TEMPERATURE = 0.0
+TIMEOUT = 120
+MAX_RETRIES = 3
 
-# Some models wrap their JSON in a Markdown code fence despite being told not to.
+# just in the case of the model wrapping the JSON
 CODE_FENCE = re.compile(r'^```(?:json)?\s*(.*?)\s*```$', re.DOTALL)
 
-_clients = {}  # one client per provider, created on first use
+_clients = {}
 
 
 def get_client(provider):
@@ -72,7 +69,7 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
     Never raises for API or parsing problems: a failed batch is recorded and resent later.
     """
     model = model or PROVIDERS[provider]['default_model']
-    user_message = json.dumps(items, ensure_ascii=False)  # keep umlauts readable, fewer tokens
+    user_message = json.dumps(items, ensure_ascii=False)
     try:
         response = get_client(provider).chat.completions.create(
             model=model,
@@ -104,7 +101,7 @@ def parse_json(content):
     match = CODE_FENCE.match(text)
     if match:
         text = match.group(1)
-    data = json.loads(text)  # json.JSONDecodeError is a subclass of ValueError
+    data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError(f'expected a JSON object, got {type(data).__name__}')
     return data
