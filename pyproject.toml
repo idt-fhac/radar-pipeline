@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-radar = "radar:main"
+radar = "radar.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.8,<0.11.0"]

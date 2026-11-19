@@ -1,0 +1,79 @@
+Du analysierst deutschsprachige YouTube-Kommentare zum Thema „{THEMA}“.
+
+Aufgabe: Finde heraus, WOMIT die Leute ihre Haltung zum Thema begründen.
+
+Eingabe:
+Du bekommst die Kommentare als JSON-Liste, jeder mit "id" und "text", manchmal zusätzlich mit
+"video" (Titel des Videos, unter dem der Kommentar steht):
+[{"id": 17, "video": "...", "text": "..."}, {"id": 18, "video": "...", "text": "..."}]
+Der Videotitel ist nur Kontext, damit du verstehst, worauf sich ein Kommentar bezieht. Bewertet
+wird ausschließlich der Kommentar: Übernimm weder die Haltung noch die Kriterien des Videos.
+Zeichenketten wie "@3fa9c0e1b2d4" sind anonymisierte Erwähnungen anderer Personen. Sie tragen keine
+Bedeutung; behandle sie wie einen Namen.
+
+Was ein Kriterium ist:
+- Ein Kriterium ist der Grund oder der Wertmaßstab, auf den sich jemand beruft, um für oder gegen
+  etwas zu sein, oder um etwas gut oder schlecht zu finden. Es beantwortet die Frage „warum?“.
+- Das Thema „{THEMA}“ selbst ist KEIN Kriterium. Ebenso wenig die Haltung als solche
+  („dafür“, „dagegen“, „Schwachsinn“, „endlich“) — die gehört in das Feld "position".
+- Keine Kriterien sind außerdem: Stil, Tonfall und Ironie des Kommentars, Aussagen über das Video,
+  den Kanal, den Moderator oder andere Kommentatoren.
+- Ebenso keine Kriterien: Aussagen über andere Menschen allgemein (deren Wissen, Motive, Verhalten
+  oder Intelligenz, z. B. „die meisten haben keine Ahnung“) und bloße Überlegenheitsbehauptungen
+  ohne Grund („die Fakten sprechen dafür“, „ist einfach besser“). Sie drücken eine Haltung aus,
+  begründen sie aber nicht.
+- Benenne jedes Kriterium mit einem kurzen, allgemeinen Oberbegriff (1–3 Wörter), der auch für
+  andere Kommentare taugt, die dasselbe meinen. Benenne das Kriterium, nicht seine Bewertung:
+  „Fahrzeit“, nicht „längere Fahrzeit“. Die Bewertung gehört in "sentiment".
+- Der Oberbegriff muss sagen, WORIN etwas gut oder schlecht ist. Zu allgemein sind Begriffe wie
+  „Eignung“, „Qualität“ oder „Vorteile“; nenne stattdessen den konkreten Maßstab
+  (siehe das Pendler-Beispiel unten).
+- Wähle die Ebene, auf der zu diesem Thema tatsächlich abgewogen wird. Wird etwas nur als Ursache
+  oder Beleg für ein Kriterium genannt, ist es kein eigenes Kriterium, sondern gehört zu diesem.
+- Zerlege den Kommentar nach Kriterien, nicht nach Sätzen: Ein Satz kann mehrere Kriterien
+  enthalten, ein Kriterium kann sich über mehrere Sätze erstrecken, und nicht jeder Satz enthält
+  ein Kriterium. Jedes Kriterium kommt pro Kommentar höchstens einmal vor.
+
+Wann die Liste leer bleibt:
+- Sehr viele Kommentare enthalten KEINE Begründung, sondern nur Zustimmung, Ablehnung,
+  Beleidigungen, Witze oder Off-topic. Dann ist "kriterien" eine leere Liste. Das ist der
+  Normalfall und kein Fehler. Erfinde in solchen Fällen nichts.
+
+Felder:
+- "position" ist die Gesamthaltung des Kommentars zum Thema „{THEMA}“ insgesamt:
+  "dafuer", "dagegen", "gemischt" (Argumente für beide Seiten) oder "unklar" (keine Haltung erkennbar).
+- "sentiment" bezieht sich AUSSCHLIESSLICH auf das einzelne Kriterium, nicht auf den Gesamtton und
+  nicht auf die Haltung zum Thema: Bewertet der Autor dieses Kriterium positiv, negativ oder
+  neutral? Bei Ironie oder Sarkasmus zählt die gemeinte, nicht die wörtliche Bedeutung.
+  "position" und "sentiment" können auseinanderfallen.
+- "zitat" ist die Textstelle, auf die du dich stützt, WÖRTLICH und unverändert aus dem Kommentar
+  kopiert, so kurz wie möglich. Stützt sich das Kriterium auf mehrere Stellen, wähle die
+  aussagekräftigste.
+
+Beispiel (anderes Thema, nur zur Veranschaulichung der Ebene; Begriffe nicht übernehmen):
+Thema „Tempolimit auf Autobahnen“.
+- „Endlich weniger Raser und weniger Tote. Dass ich dann 10 Minuten länger brauche, ist mir egal.“
+  → position "dafuer"; „Verkehrssicherheit“ (positiv, zitat „weniger Raser und weniger Tote“),
+  „Fahrzeit“ (neutral, zitat „10 Minuten länger brauche, ist mir egal“).
+  „Raser“ und „Tote“ sind kein eigenes Kriterium, sondern Belege für „Verkehrssicherheit“.
+- „Klar, 130 auf der Autobahn rettet das Weltklima. Ganz bestimmt.“
+  → position "dagegen"; „Klimaschutz“ (negativ, zitat „130 auf der Autobahn rettet das Weltklima“).
+  Ironisch gemeint: Der Autor hält die Wirkung fürs Klima für gering. NICHT „Ironie“.
+- „So ein Schwachsinn, typisch Deutschland“ → position "dagegen", kriterien: [].
+- „Die Befürworter fahren doch eh nie Autobahn. Die Fakten sind eindeutig, das Limit ist Unsinn.“
+  → position "dagegen", kriterien: [] (Aussage über andere Menschen und Überlegenheitsbehauptung
+  ohne Grund).
+- „Für Pendler ist das völlig ungeeignet, die verlieren jeden Tag eine Viertelstunde.“
+  → position "dagegen"; „Fahrzeit“ (negativ, zitat „die verlieren jeden Tag eine Viertelstunde“).
+  NICHT „Eignung“: Die Viertelstunde zeigt, worin das Limit ungeeignet ist.
+- „Wer hat den Typen im Video eingeladen? 🤡“ → position "unklar", kriterien: [] (Aussage über das Video).
+
+Ausgabe:
+Jede "id" aus der Eingabe muss genau einmal in der Ausgabe vorkommen, in derselben Reihenfolge.
+Lass keinen Kommentar aus, auch nicht die ohne Kriterien.
+Antworte ausschließlich mit JSON in genau diesem Format, ohne weiteren Text:
+{"ergebnisse": [
+  {"id": <id>, "position": "dafuer|dagegen|gemischt|unklar", "kriterien": [
+    {"kriterium": "<Oberbegriff>", "sentiment": "positiv|negativ|neutral", "zitat": "<wörtliche Textstelle>"}
+  ]}
+]}

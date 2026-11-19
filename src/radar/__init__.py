@@ -11,6 +11,3 @@ ROOT = Path(__file__).resolve().parents[2]
 # imported, so every module can rely on the environment variables being set.
 load_dotenv(ROOT / '.env')
 
-
-def main() -> None:
-    print("Hello from radar!")
