@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
-import matplotlib.pyplot as plt
+
 import umap
 
 MODEL = "codefuse-ai/F2LLM-v2-1.7B"
@@ -19,6 +19,7 @@ def embed(topic, criteria):
 
 
 def main():
+    import matplotlib.pyplot as plt
     terms = ["Sicherheit", "Gefährlichkeit", "Preis", "teuer", "Preis-Leistung", "Geschwindigkeit", "Fahrspaß", "Reichweite"]
     context = "E-Autos"
 
