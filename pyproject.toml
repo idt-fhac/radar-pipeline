@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
     "hdbscan>=0.8.44",
+    "openai>=3.51.0",
     "python-dotenv>=1.2.4",
     "requests>=2.34.2",
     "sentence-transformers>=6.3.0",
@@ -21,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-radar = "radar:main"
+radar = "radar.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.8,<0.11.0"]

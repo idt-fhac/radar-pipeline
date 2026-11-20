@@ -1,0 +1,247 @@
+# cli.py — command line interface: `uv run radar <command> ...` (see `uv run radar --help`)
+
+import argparse
+import logging
+import os
+import sys
+from datetime import datetime, timezone
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    # Must happen before anything imports radar.db.engine: the engine reads these at import time.
+    os.environ['RADAR_DB'] = args.db
+    os.environ['RADAR_SQL_ECHO'] = '1' if args.sql else '0'
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+    if args.handler is not cmd_models:
+        from radar.db.engine import DB_PATH
+        if not DB_PATH.exists():  # SQLite would silently create an empty file without tables
+            sys.exit(f'error: {DB_PATH.name} does not exist; create it first: '
+                     f'$env:RADAR_DB = "{args.db}"; uv run alembic upgrade head')
+    if args.db == 'prod':
+        logging.getLogger('radar').info('using the PRODUCTION database')
+
+    try:
+        args.handler(args)
+    except (ValueError, RuntimeError) as error:
+        sys.exit(f'error: {error}')
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog='radar', description='RADAR pipeline')
+    parser.add_argument('--db', choices=['test', 'prod'], default=os.getenv('RADAR_DB', 'test'),
+                        help='database to use (default: test, or $RADAR_DB)')
+    parser.add_argument('--sql', action='store_true', help='log every SQL statement')
+    commands = parser.add_subparsers(dest='command', required=True)
+
+    collect = commands.add_parser('collect', help='search YouTube and store videos and comments')
+    collect.add_argument('topic', help='topic name, e.g. "E-Auto"')
+    collect.add_argument('search_term', help='YouTube search term, e.g. "Verbrenner-Aus"')
+    collect.add_argument('--max-videos', type=int, help='videos taken from the search results')
+    collect.add_argument('--max-threads', type=int, help='top-level comments per video')
+    collect.add_argument('--order', choices=['relevance', 'time'], help='comment order')
+    collect.add_argument('--replies', choices=['all', 'included', 'none'], help='which replies to fetch')
+    collect.add_argument('--allow-dirty', action='store_true', help='allow uncommitted code changes')
+    collect.set_defaults(handler=cmd_collect)
+
+    sample = commands.add_parser('sample', help='load, filter and freeze a sample of a topic')
+    sample.add_argument('name', help='unique sample name, e.g. "e-auto-main"')
+    sample.add_argument('topic', help='topic name')
+    sample.add_argument('--source', help='only posts from this source, e.g. youtube')
+    sample.add_argument('--video', action='append', dest='video_ids', metavar='VIDEO_ID',
+                        help='only posts from this video (external id); repeatable')
+    sample.add_argument('--after', type=parse_time, help='published at or after (ISO date, UTC)')
+    sample.add_argument('--before', type=parse_time, help='published before (ISO date, UTC)')
+    sample.add_argument('--include-root-posts', action='store_true', help='also take the videos themselves')
+    sample.add_argument('--min-words', type=int, default=5, help='drop shorter posts (default 5, 0 = off)')
+    sample.add_argument('--keep-empty', action='store_true', help='keep posts without letters')
+    sample.add_argument('--keep-duplicates', action='store_true', help='keep posts with duplicate text')
+    sample.add_argument('--allow-dirty', action='store_true')
+    sample.set_defaults(handler=cmd_sample)
+
+    subset = commands.add_parser('subset', help='draw a reproducible random subset of a sample')
+    subset.add_argument('name', help='unique sample name, e.g. "e-auto-300"')
+    subset.add_argument('base', help='name of the sample to draw from')
+    subset.add_argument('n', type=int, help='number of posts')
+    subset.add_argument('--seed', type=int, default=42)
+    subset.add_argument('--allow-dirty', action='store_true')
+    subset.set_defaults(handler=cmd_subset)
+
+    run = commands.add_parser('run', help='start an LLM annotation run on a sample')
+    run.add_argument('sample', help='sample name')
+    run.add_argument('prompt', help='prompt name (file stem in prompts/), e.g. extraction_v1')
+    run.add_argument('--provider', choices=['idt', 'kiconnect'], help='default: idt')
+    run.add_argument('--model', help="model id (default: the provider's default model)")
+    run.add_argument('--temperature', type=float)
+    run.add_argument('--batch-size', type=int)
+    run.add_argument('--context', dest='context_strategy', choices=['text', 'text+video_title'])
+    thinking = run.add_mutually_exclusive_group()
+    thinking.add_argument('--thinking', dest='thinking', action='store_true', default=None,
+                          help='reasoning phase on (default)')
+    thinking.add_argument('--no-thinking', dest='thinking', action='store_false', help='reasoning phase off')
+    run.add_argument('--max-rounds', type=int)
+    run.add_argument('--workers', type=int, help='parallel requests')
+    run.add_argument('--allow-dirty', action='store_true')
+    run.set_defaults(handler=cmd_run)
+
+    resume = commands.add_parser('resume', help='continue an aborted or incomplete run')
+    resume.add_argument('run_id', type=int)
+    resume.add_argument('--max-rounds', type=int)
+    resume.add_argument('--workers', type=int)
+    resume.set_defaults(handler=cmd_resume)
+
+    show = commands.add_parser('show', help='show the results of a run')
+    show.add_argument('run_id', type=int)
+    show.add_argument('--full', action='store_true', help='print the full comment texts')
+    show.set_defaults(handler=cmd_show)
+
+    runs = commands.add_parser('runs', help='list annotation runs')
+    runs.set_defaults(handler=cmd_runs)
+
+    models = commands.add_parser('models', help='list the models a provider offers')
+    models.add_argument('provider', nargs='?', default='idt', choices=['idt', 'kiconnect'])
+    models.set_defaults(handler=cmd_models)
+
+    return parser
+
+
+def parse_time(value):
+    """'2026-01-01' or '2026-01-01T12:00' -> datetime in UTC (naive values count as UTC)."""
+    moment = datetime.fromisoformat(value)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def given(args, *names):
+    """Only the options the user actually set, so the functions' own defaults apply otherwise."""
+    return {name: getattr(args, name) for name in names if getattr(args, name) is not None}
+
+
+def cmd_collect(args):
+    from radar.collection.collect import collect_youtube
+    options = {'max_videos': args.max_videos, 'max_threads_per_video': args.max_threads,
+               'comment_order': args.order, 'replies': args.replies}
+    collect_youtube(args.topic, args.search_term, allow_dirty=args.allow_dirty,
+                    **{key: value for key, value in options.items() if value is not None})
+
+
+def cmd_sample(args):
+    from radar.db.engine import Session
+    from radar.sampling.sample import create_sample
+    with Session() as session:
+        sample = create_sample(
+            session, args.name, args.topic, source=args.source, video_ids=args.video_ids,
+            published_after=args.after, published_before=args.before,
+            include_root_posts=args.include_root_posts, drop_empty=not args.keep_empty,
+            min_words=args.min_words or None, drop_duplicates=not args.keep_duplicates,
+            allow_dirty=args.allow_dirty)
+        session.commit()
+        print_definition(sample)
+
+
+def cmd_subset(args):
+    from radar.db.engine import Session
+    from radar.sampling.sample import create_subset
+    with Session() as session:
+        subset = create_subset(session, args.name, args.base, args.n, seed=args.seed,
+                               allow_dirty=args.allow_dirty)
+        session.commit()
+        print_definition(subset)
+
+
+def print_definition(sample):
+    definition = sample.definition
+    print(f'sample {sample.name!r} (id {sample.id})')
+    if 'loaded' in definition:
+        print(f'  loaded             {definition["loaded"]:>6}')
+        for step in definition['filters']:
+            print(f'  {step["name"]:<18} {step["remaining"]:>6}')
+    else:
+        print(f'  drawn {definition["n"]} of {definition["base_size"]} from {definition["base_sample"]!r}'
+              f' (seed {definition["seed"]})')
+
+
+def cmd_run(args):
+    from radar.db.engine import Session
+    from radar.annotation.run_llm import run_llm
+    with Session() as session:
+        annotation_run = run_llm(session, args.sample, args.prompt, allow_dirty=args.allow_dirty,
+                                 **given(args, 'provider', 'model', 'temperature', 'batch_size',
+                                         'context_strategy', 'thinking', 'max_rounds', 'workers'))
+        print(f'run {annotation_run.id}')
+
+
+def cmd_resume(args):
+    from radar.db.engine import Session
+    from radar.annotation.run_llm import resume_run
+    with Session() as session:
+        resume_run(session, args.run_id, **given(args, 'max_rounds', 'workers'))
+
+
+def cmd_show(args):
+    from sqlalchemy import select
+    from radar.db.engine import Session
+    from radar.db.models.annotation import Annotation, Batch, CriterionMention
+    from radar.db.models.collection import Post
+    from radar.annotation.run_llm import load_run
+    with Session() as session:
+        annotation_run = load_run(session, args.run_id)
+        llm_run = annotation_run.llm_run
+        print(f'run {annotation_run.id}: sample {annotation_run.sample.name!r}, '
+              f'prompt {annotation_run.prompt_version.name!r}, {llm_run.params.get("provider")} '
+              f'{llm_run.model}, thinking={llm_run.params.get("thinking")}, '
+              f'context={llm_run.context_strategy}, code {annotation_run.code_version[:12]}')
+
+        batches = session.execute(select(Batch.number, Batch.status)
+                                  .where(Batch.run_id == annotation_run.id).order_by(Batch.number)).all()
+        print('batches: ' + ', '.join(f'{number}:{status}' for number, status in batches))
+
+        rows = session.execute(select(Post.id, Post.text, Annotation.stance)
+                               .join(Annotation, Annotation.post_id == Post.id)
+                               .where(Annotation.run_id == annotation_run.id).order_by(Post.id)).all()
+        mentions = {}
+        for mention in session.scalars(select(CriterionMention)
+                                       .where(CriterionMention.run_id == annotation_run.id)
+                                       .order_by(CriterionMention.id)):
+            mentions.setdefault(mention.post_id, []).append(mention)
+
+        for post_id, text, stance in rows:
+            text = text if args.full else shorten(text, 200)
+            print(f'\n#{post_id} [{stance}] {text}')
+            for mention in mentions.get(post_id, []):
+                print(f'    -> {mention.label} ({mention.sentiment}): {mention.quote}')
+        print(f'\n{len(rows)} annotated posts, {sum(map(len, mentions.values()))} criteria')
+
+
+def cmd_runs(args):
+    from sqlalchemy import func, select
+    from sqlalchemy.orm import selectinload
+    from radar.db.engine import Session
+    from radar.db.models.annotation import Annotation, AnnotationRun
+    with Session() as session:
+        runs = session.scalars(select(AnnotationRun).order_by(AnnotationRun.id).options(
+            selectinload(AnnotationRun.llm_run), selectinload(AnnotationRun.human_run),
+            selectinload(AnnotationRun.sample), selectinload(AnnotationRun.prompt_version))).all()
+        counts = dict(session.execute(select(Annotation.run_id, func.count())
+                                      .group_by(Annotation.run_id)).all())
+        for run in runs:
+            kind = (f'llm {run.llm_run.params.get("provider")} {run.llm_run.model} '
+                    f'thinking={run.llm_run.params.get("thinking")}') if run.llm_run else 'human'
+            print(f'{run.id:>4}  {run.started_at:%Y-%m-%d %H:%M}  {run.sample.name:<16} '
+                  f'{run.prompt_version.name:<16} {kind}  annotated={counts.get(run.id, 0)}')
+
+
+def cmd_models(args):
+    from radar.annotation.llm_client import list_models
+    for model in list_models(args.provider):
+        print(model)
+
+
+def shorten(text, length):
+    text = ' '.join(text.split())
+    return text if len(text) <= length else text[:length - 1] + '…'
+
+
+if __name__ == '__main__':
+    main()

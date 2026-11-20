@@ -47,7 +47,7 @@ class PromptVersion(Base):
     __tablename__ = 'prompt_version'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column()
+    name: Mapped[str] = mapped_column(unique=True)
     text: Mapped[str] = mapped_column()
     hash: Mapped[str] = mapped_column(unique=True)
 
@@ -91,8 +91,7 @@ class LlmRun(Base):
 
     # primary key and foreign key at once: one llm_run per annotation_run
     run_id: Mapped[int] = mapped_column(ForeignKey('annotation_run.id'), primary_key=True)
-    requested_model: Mapped[str] = mapped_column()
-    model: Mapped[str | None] = mapped_column()  # as returned by the API, None until the first response
+    model: Mapped[str] = mapped_column()
     temperature: Mapped[float] = mapped_column()
     batch_size: Mapped[int] = mapped_column()
     context_strategy: Mapped[str] = mapped_column()
@@ -125,7 +124,7 @@ class Batch(Base):
     run_id: Mapped[int] = mapped_column(ForeignKey('llm_run.run_id'), index=True)
     number: Mapped[int] = mapped_column()
     status: Mapped[str] = mapped_column()
-    raw_response: Mapped[dict | None] = mapped_column(JSON)  # None if the request failed
+    raw_response: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))  # SQL NULL if the request failed
 
     llm_run: Mapped['LlmRun'] = relationship(
         back_populates = 'batches', lazy = 'raise'
