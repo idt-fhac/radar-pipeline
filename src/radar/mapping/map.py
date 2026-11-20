@@ -11,7 +11,7 @@ from radar.db.engine import Session
 from radar.db.models.annotation import AnnotationRun, CriterionMention, Sample
 from radar.db.models.mapping import Assignment, Criterion, Embedding, EmbeddingConfig, MappingRun
 from radar.provenance import get_code_version
-from radar.sources import f2llm
+from radar.mapping import f2llm
 
 import logging
 
