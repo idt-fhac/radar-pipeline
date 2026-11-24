@@ -11,7 +11,7 @@ from radar.db.engine import Session
 from radar.db.models.annotation import AnnotationRun, CriterionMention, Sample
 from radar.db.models.mapping import Assignment, Criterion, Embedding, EmbeddingConfig, MappingRun
 from radar.provenance import get_code_version
-from radar.mapping import f2llm
+from radar.mapping import embed
 
 import logging
 
@@ -21,10 +21,12 @@ EMBED_BATCH_SIZE = 256  # inputs per call to the model; the new embeddings are c
 VECTOR_DTYPE = np.float32  # dtype of Embedding.vector (bytes)
 
 
-def map_criteria(annotation_run_ids, method, threshold = None, params = None, allow_dirty = False):
+def map_criteria(annotation_run_ids, method, threshold = None, params = None, allow_dirty = False,
+                 embedding_provider = embed.DEFAULT_PROVIDER):
     """Map the criterion mentions of the given annotation runs onto shared criteria.
 
-    Embeds every distinct rendered text once with f2llm (cached in `embedding`), clusters
+    Embeds every distinct rendered text once with the embedding provider from the config
+    (cached in `embedding`, per provider and model), clusters
     the vectors and stores one mapping_run with its criteria and one assignment per mention.
     Returns the id of the new mapping_run.
     """
@@ -39,8 +41,7 @@ def map_criteria(annotation_run_ids, method, threshold = None, params = None, al
             raise ValueError(f'annotation runs {sorted(annotation_run_ids)} contain no criterion mentions')
 
         # embeddings: one per distinct rendered text, cached by input hash
-        embedding_config = get_or_create_embedding_config(session, f2llm.MODEL, f2llm.TEMPLATE)
-        topic_name = topic.name
+        embedding_config = get_or_create_embedding_config(session, embed.model_id(embedding_provider), embed.TEMPLATE)
         mentions_by_hash = defaultdict(list)
         input_by_hash = {}
         label_by_hash = {}
@@ -56,8 +57,8 @@ def map_criteria(annotation_run_ids, method, threshold = None, params = None, al
         logger.info('%d mentions, %d distinct inputs, %d cached, %d to embed', len(mentions), len(mentions_by_hash), len(vectors_by_hash), len(missing))
         for start in range(0, len(missing), EMBED_BATCH_SIZE):
             batch = missing[start:start + EMBED_BATCH_SIZE]
-            # f2llm prepends its prompt itself, so only the labels are passed; prompt + label equals input_by_hash
-            vectors = np.asarray(f2llm.embed(topic_name, [label_by_hash[input_hash] for input_hash in batch]), dtype = VECTOR_DTYPE)
+            # the rendered texts are embedded exactly as hashed, so cache key and model input match
+            vectors = embed.embed([input_by_hash[input_hash] for input_hash in batch], embedding_provider).astype(VECTOR_DTYPE)
             for input_hash, vector in zip(batch, vectors):
                 create_embedding(session, embedding_config, input_by_hash[input_hash], vector.tobytes())
                 vectors_by_hash[input_hash] = vector

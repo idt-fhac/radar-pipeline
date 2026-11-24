@@ -1,0 +1,51 @@
+# Configuration of the models the pipeline talks to.
+#
+# To change it locally, copy this file to config.toml (not in the repository) and edit it;
+# config.toml takes precedence over this file. API keys never go here: key_env names the
+# environment variable (e.g. in .env) that holds the key.
+
+# --- LLMs for the annotation: OpenAI-compatible chat completion APIs -----------------------
+#
+#   base_url       endpoint of the API
+#   key_env        environment variable with the API key
+#   default_model  model used when a run names none (`uv run radar models <provider>` lists them)
+
+[llm]
+default = "idt"
+
+# LLM API of the IDT, FH Aachen
+[llm.providers.idt]
+base_url = "https://chat.idt.fh-aachen.de/api/v1"
+key_env = "IDT_API_KEY"
+default_model = "qwen3-8-flash-next-int4"
+
+# KI:connect.NRW
+[llm.providers.kiconnect]
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+default_model = "qwen-qwen3-8-27b"
+
+# --- Embedding models for the mapping ------------------------------------------------------
+#
+#   backend = "local"   runs the model on this computer with sentence-transformers
+#                       model   Hugging Face id (downloaded on first use)
+#                       device  "cpu" or "cuda"
+#                       dtype   torch dtype, e.g. "bfloat16" or "float32"
+#   backend = "openai"  calls an OpenAI-compatible /embeddings endpoint
+#                       base_url, key_env as above, model as the provider names it
+
+[embedding]
+default = "f2llm"
+
+[embedding.providers.f2llm]
+backend = "local"
+model = "codefuse-ai/F2LLM-v2-1.7B"
+device = "cpu"
+dtype = "bfloat16"
+
+# KI:connect.NRW; look up the exact embedding model id with `uv run radar models kiconnect`
+[embedding.providers.kiconnect]
+backend = "openai"
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+model = "qwen-qwen3-embedding-8b"

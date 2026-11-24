@@ -49,7 +49,7 @@ cd radar-pipeline
 uv sync
 ```
 
-LLM providers (OpenAI-compatible APIs) are configured in `providers.example.toml`. To use other providers, copy it to `providers.toml` (ignored by Git, takes precedence) and add an entry with `base_url`, `key_env` (name of the environment variable holding the key) and `default_model`. The provider name and its `base_url` are stored with every run.
+The models are configured in `config.example.toml`: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change them, copy the file to `config.toml` (ignored by Git, takes precedence). The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings.
 
 Create a `.env` file in the repository root (never commit it):
 
@@ -129,10 +129,10 @@ radar-pipeline/
 │   ├── sampling/            # filters.py (content filters), sample.py (load, freeze, subsets)
 │   ├── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions),
 │   │                        # parse.py (validate LLM output), run_llm.py (annotation runs)
-│   ├── mapping/             # f2llm.py (embedding model), map.py (embed, cluster, store criteria)
+│   ├── mapping/             # embed.py (embedding models from the config), map.py (embed, cluster, store criteria)
 │   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
-├── providers.example.toml   # LLM providers (copy to providers.toml to change locally)
+├── config.example.toml      # LLM and embedding models (copy to config.toml to change locally)
 ├── docs/                    # documentation, data model diagrams
 ├── migrations/              # Alembic migrations
 ├── tests/
