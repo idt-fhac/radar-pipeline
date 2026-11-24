@@ -90,8 +90,9 @@ def cluster(vectors, method, threshold = None, params = None):
 
     method 'agglomerative': threshold is the cosine distance at which clusters stop merging,
         params are passed to sklearn's AgglomerativeClustering (e.g. {'linkage': 'average'}).
-    method 'hdbscan': threshold is cluster_selection_epsilon (optional), params are passed
-        to hdbscan.HDBSCAN (e.g. {'min_cluster_size': 3}); its outliers (-1) are split up.
+    method 'hdbscan': cosine distance; threshold is cluster_selection_epsilon (optional, a cosine
+        distance), params are passed to hdbscan.HDBSCAN (e.g. {'min_cluster_size': 3});
+        its outliers (-1) are split up.
     """
     params = {} if params is None else params
     if len(vectors) < 2:
@@ -105,10 +106,11 @@ def cluster(vectors, method, threshold = None, params = None):
         labels = AgglomerativeClustering(n_clusters = None, distance_threshold = threshold, **options).fit_predict(vectors)
     elif method == 'hdbscan':
         import hdbscan
-        options = dict(params)
+        # cosine is only supported by the 'generic' algorithm (full distance matrix), which needs float64
+        options = {'metric': 'cosine', 'algorithm': 'generic', **params}
         if threshold is not None:
             options['cluster_selection_epsilon'] = threshold
-        labels = hdbscan.HDBSCAN(**options).fit_predict(vectors)
+        labels = hdbscan.HDBSCAN(**options).fit_predict(np.asarray(vectors, dtype = np.float64))
     else:
         raise ValueError(f'unknown clustering method: {method!r}')
 
