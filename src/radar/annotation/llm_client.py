@@ -1,22 +1,29 @@
-# llm_client.py — the only module that talks to an LLM (OpenAI-compatible APIs: KI:connect, IDT).
+# llm_client.py — the only module that talks to an LLM (OpenAI-compatible APIs, see providers.example.toml).
 # Knows no database: takes a prompt and plain dicts, returns plain dicts.
 
 import json
 import logging
 import os
 import re
+import tomllib
 
 from openai import OpenAI, OpenAIError
 
+from radar import ROOT
+
 logger = logging.getLogger(__name__)
 
-PROVIDERS = {
-    'kiconnect': {'base_url': 'https://chat.kiconnect.nrw/api/v1', 'key_env': 'KI_API_KEY',
-                  'default_model': 'qwen-qwen3-8-27b'},
-    'idt':       {'base_url': 'https://chat.idt.fh-aachen.de/api/v1', 'key_env': 'IDT_API_KEY',
-                  'default_model': 'qwen3-8-flash-next-int4'},
-}
-DEFAULT_PROVIDER = 'idt'
+# Providers come from providers.toml (local, not in the repository) or, if that does not
+# exist, from providers.example.toml. Each entry: base_url, key_env, default_model.
+PROVIDERS_FILE = ROOT / 'providers.toml'
+if not PROVIDERS_FILE.exists():
+    PROVIDERS_FILE = ROOT / 'providers.example.toml'
+with open(PROVIDERS_FILE, 'rb') as f:  # tomllib only reads binary files
+    _config = tomllib.load(f)
+PROVIDERS = _config['providers']
+DEFAULT_PROVIDER = _config['default']
+if DEFAULT_PROVIDER not in PROVIDERS:
+    raise ValueError(f'default provider {DEFAULT_PROVIDER!r} is not defined in {PROVIDERS_FILE.name}')
 DEFAULT_TEMPERATURE = 0.0
 TIMEOUT = 600
 MAX_RETRIES = 3

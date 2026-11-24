@@ -4,7 +4,7 @@ Data pipeline of the RADAR project: reproducible, LLM-based extraction of decisi
 
 Developed at the Institute of Data-Driven Technologies (IDT), FH Aachen.
 
-> **Status:** early development. Collection (YouTube), sampling and the LLM client are implemented; LLM annotation runs, mapping and analysis are in progress. There is no command-line interface yet.
+> **Status:** early development. Collection (YouTube), sampling and LLM annotation runs are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet; analysis is in progress.
 
 ## Purpose
 
@@ -39,6 +39,7 @@ The full data model with diagrams is documented in [docs/data-model.md](docs/dat
 - SQLAlchemy 2.x (ORM) for models and writes; analyses as SQL views
 - Alembic for schema migrations
 - OpenAI Python SDK for LLM access via OpenAI-compatible APIs (KI:connect.NRW, IDT)
+- sentence-transformers (F2LLM) for embeddings, scikit-learn and HDBSCAN for clustering, UMAP for visualisation
 
 ## Setup
 
@@ -47,6 +48,8 @@ git clone https://github.com/idt-fhac/radar-pipeline.git
 cd radar-pipeline
 uv sync
 ```
+
+LLM providers (OpenAI-compatible APIs) are configured in `providers.example.toml`. To use other providers, copy it to `providers.toml` (ignored by Git, takes precedence) and add an entry with `base_url`, `key_env` (name of the environment variable holding the key) and `default_model`. The provider name and its `base_url` are stored with every run.
 
 Create a `.env` file in the repository root (never commit it):
 
@@ -124,8 +127,12 @@ radar-pipeline/
 │   │   └── youtube.py       # YouTube Data API client (no database access)
 │   ├── collection/          # collect.py (store a collection run), raw.py (clean raw JSON)
 │   ├── sampling/            # filters.py (content filters), sample.py (load, freeze, subsets)
-│   └── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions)
+│   ├── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions),
+│   │                        # parse.py (validate LLM output), run_llm.py (annotation runs)
+│   ├── mapping/             # f2llm.py (embedding model), map.py (embed, cluster, store criteria)
+│   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
+├── providers.example.toml   # LLM providers (copy to providers.toml to change locally)
 ├── docs/                    # documentation, data model diagrams
 ├── migrations/              # Alembic migrations
 ├── tests/

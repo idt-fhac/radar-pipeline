@@ -1,0 +1,22 @@
+# LLM providers: OpenAI-compatible chat completion APIs.
+#
+# To use your own providers, copy this file to providers.toml (not in the repository) and edit it;
+# providers.toml takes precedence over this file.
+#
+#   base_url       endpoint of the OpenAI-compatible API
+#   key_env        name of the environment variable (e.g. in .env) that holds the API key
+#   default_model  model used when a run names none (`uv run radar models <provider>` lists them)
+
+default = "idt"
+
+# LLM API of the IDT, FH Aachen
+[providers.idt]
+base_url = "https://chat.idt.fh-aachen.de/api/v1"
+key_env = "IDT_API_KEY"
+default_model = "qwen3-8-flash-next-int4"
+
+# KI:connect.NRW
+[providers.kiconnect]
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+default_model = "qwen-qwen3-8-27b"

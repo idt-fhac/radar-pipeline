@@ -69,7 +69,8 @@ def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER,
         raise ValueError(f'Unknown context_strategy: {context_strategy}\nChoose from {CONTEXT_STRATEGIES = }')
     prompt_version = get_or_create_prompt_version(session, prompt_name)
     annotation_run = AnnotationRun(sample_id = sample.id, prompt_version= prompt_version, code_version = get_code_version(allow_dirty), started_at = datetime.now(timezone.utc))
-    params = {'provider': provider, 'thinking': thinking}
+    # base_url too: the provider name alone does not say which server answered, the config can change
+    params = {'provider': provider, 'base_url': PROVIDERS[provider]['base_url'], 'thinking': thinking}
     llm_run = LlmRun(model=model, temperature = temperature, batch_size = batch_size, context_strategy = context_strategy, params=params)
     annotation_run.llm_run = llm_run
     session.add(annotation_run)

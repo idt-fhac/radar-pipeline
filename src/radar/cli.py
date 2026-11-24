@@ -30,6 +30,8 @@ def main(argv=None):
 
 
 def build_parser():
+    from radar.annotation.llm_client import DEFAULT_PROVIDER, PROVIDERS  # does not touch the engine
+
     parser = argparse.ArgumentParser(prog='radar', description='RADAR pipeline')
     parser.add_argument('--db', choices=['test', 'prod'], default=os.getenv('RADAR_DB', 'test'),
                         help='database to use (default: test, or $RADAR_DB)')
@@ -72,7 +74,7 @@ def build_parser():
     run = commands.add_parser('run', help='start an LLM annotation run on a sample')
     run.add_argument('sample', help='sample name')
     run.add_argument('prompt', help='prompt name (file stem in prompts/), e.g. extraction_v1')
-    run.add_argument('--provider', choices=['idt', 'kiconnect'], help='default: idt')
+    run.add_argument('--provider', choices=list(PROVIDERS), help=f'default: {DEFAULT_PROVIDER}')
     run.add_argument('--model', help="model id (default: the provider's default model)")
     run.add_argument('--temperature', type=float)
     run.add_argument('--batch-size', type=int)
@@ -101,7 +103,7 @@ def build_parser():
     runs.set_defaults(handler=cmd_runs)
 
     models = commands.add_parser('models', help='list the models a provider offers')
-    models.add_argument('provider', nargs='?', default='idt', choices=['idt', 'kiconnect'])
+    models.add_argument('provider', nargs='?', default=DEFAULT_PROVIDER, choices=list(PROVIDERS))
     models.set_defaults(handler=cmd_models)
 
     return parser
