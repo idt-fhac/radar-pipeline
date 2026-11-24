@@ -27,25 +27,64 @@ default_model = "qwen-qwen3-8-27b"
 
 # --- Embedding models for the mapping ------------------------------------------------------
 #
+#   backend = "openai"  calls an OpenAI-compatible endpoint; base_url is the API root
+#                       (the client appends /embeddings itself), key_env as above,
+#                       model as the provider names it
 #   backend = "local"   runs the model on this computer with sentence-transformers
 #                       model   Hugging Face id (downloaded on first use)
 #                       device  "cpu" or "cuda"
 #                       dtype   torch dtype, e.g. "bfloat16" or "float32"
-#   backend = "openai"  calls an OpenAI-compatible /embeddings endpoint
-#                       base_url, key_env as above, model as the provider names it
 
 [embedding]
-default = "f2llm"
+default = "kiconnect"
+template = "instruct_category"     # which [embedding.templates] entry is embedded by default
 
+# KI:connect.NRW (only embedding model there, 20.11.)
+[embedding.providers.kiconnect]
+backend = "openai"
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+model = "qwen-qwen3-embedding-8b"
+
+# F2LLM, run locally
 [embedding.providers.f2llm]
 backend = "local"
 model = "codefuse-ai/F2LLM-v2-1.7B"
 device = "cpu"
 dtype = "bfloat16"
 
-# KI:connect.NRW; look up the exact embedding model id with `uv run radar models kiconnect`
-[embedding.providers.kiconnect]
-backend = "openai"
-base_url = "https://chat.kiconnect.nrw/api/v1"
-key_env = "KI_API_KEY"
-model = "qwen-qwen3-embedding-8b"
+# What is embedded per criterion. Placeholders: {topic} (topic of the sample), {label}.
+# The rendered pattern is stored with every mapping run (embedding_config.template), so
+# editing an entry here never changes old runs. Instructions ("Instruct: ...\nQuery: ...")
+# are the format of Qwen3-Embedding and F2LLM; write them in English, also for German labels.
+[embedding.templates]
+label             = "{label}"
+topic_label       = "{topic}: {label}"
+instruct_category = "Instruct: The following terms come from the domain {topic}. Identify the semantic category of the term\nQuery: {label}"
+instruct_group    = "Instruct: Group purchase criteria by meaning\nQuery: {topic}: {label}"
+instruct_domain   = "Instruct: Given a criterion from German online discussions about {topic}, represent its meaning for clustering\nQuery: {label}"
+
+# --- Mapping: reduction, clustering, naming -------------------------------------------------
+# Defaults of `map_criteria`; every value actually used is stored in mapping_run.params.
+# Tuned in the embedding playground on run 7 (qwen-qwen3-embedding-8b, 20.11.).
+
+[mapping]
+method = "hdbscan"                 # "hdbscan" or "agglomerative"
+naming = "centroid"                # criterion name: "centroid" (label closest to the
+                                   # mention-weighted mean) or "frequent" (most mentioned label)
+
+[mapping.reduction]                # UMAP before clustering, for every method
+n_components = 5
+n_neighbors = 15
+min_dist = 0.0
+metric = "cosine"
+random_state = 42
+
+[mapping.hdbscan]                  # scikit-learn's HDBSCAN; every outlier becomes its own criterion
+min_cluster_size = 8               # main knob: higher = fewer, broader criteria
+min_samples = 3                    # lower = fewer outliers
+
+[mapping.agglomerative]            # runs on the UMAP projection, like every method
+threshold = 0.3                    # distance at which clusters stop merging; not tuned yet
+linkage = "average"
+metric = "euclidean"               # UMAP's output space is euclidean

@@ -6,14 +6,15 @@ import os
 
 import numpy as np
 
-from radar.config import providers
+from radar.config import CONFIG, CONFIG_FILE, providers
 
 PROVIDERS, DEFAULT_PROVIDER = providers('embedding')
 
-# What is embedded per criterion. Still to be decided where prompt and template should live.
-PROMPT = ("Instruct: Die folgenden Begriffe stammen aus dem Bereich "
-          "{topic}. Identifiziere die semantische Kategorie des Terms\nQuery: ")
-TEMPLATE = PROMPT + "{label}"  # rendered text the model sees; its hash is the cache key
+# What is embedded per criterion: named patterns from [embedding.templates].
+TEMPLATES = CONFIG['embedding'].get('templates', {})
+DEFAULT_TEMPLATE = CONFIG['embedding'].get('template')
+if DEFAULT_TEMPLATE not in TEMPLATES:
+    raise ValueError(f'default embedding template {DEFAULT_TEMPLATE!r} is not defined in {CONFIG_FILE.name}')
 
 TIMEOUT = 120
 MAX_RETRIES = 3
@@ -28,6 +29,21 @@ def model_id(provider=DEFAULT_PROVIDER):
     deployment (e.g. quantised) and must not share the embedding cache.
     """
     return f'{provider}:{config(provider)["model"]}'
+
+
+def template(name=DEFAULT_TEMPLATE):
+    """The pattern of a named template, e.g. 'Instruct: ...\nQuery: {label}'."""
+    if name not in TEMPLATES:
+        raise ValueError(f'unknown embedding template {name!r}, known: {", ".join(TEMPLATES)}')
+    return TEMPLATES[name]
+
+
+def render(pattern, topic, label):
+    """The text sent to the model for one label; its hash is the cache key.
+
+    str.replace instead of str.format: labels come from an LLM and may contain braces.
+    """
+    return pattern.replace('{topic}', topic).replace('{label}', label)
 
 
 def config(provider):
@@ -79,7 +95,7 @@ def main():
     terms = ["Sicherheit", "Gefährlichkeit", "Preis", "teuer", "Preis-Leistung", "Geschwindigkeit", "Fahrspaß", "Reichweite"]
     context = "E-Autos"
 
-    emb = embed([TEMPLATE.format(topic=context, label=term) for term in terms])
+    emb = embed([render(template(), context, term) for term in terms])
     print(emb.shape)
 
     dist = {}
