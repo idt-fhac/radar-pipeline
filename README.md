@@ -49,7 +49,7 @@ cd radar-pipeline
 uv sync
 ```
 
-The models are configured in `config.example.toml`: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change them, copy the file to `config.toml` (ignored by Git, takes precedence). The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings.
+The models are configured in `config.example.toml`: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change them, copy the file to `config.toml` (ignored by Git, takes precedence). The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings. What is embedded per criterion is a named pattern in `[embedding.templates]` (placeholders `{topic}`, `{label}`); `[mapping]` holds the defaults of the mapping: UMAP projection before clustering, the method (`hdbscan` or `agglomerative`) with its options and the naming of criteria (`centroid` or `frequent`). Every value a mapping run uses is stored in `mapping_run.params`.
 
 Create a `.env` file in the repository root (never commit it):
 
@@ -129,7 +129,7 @@ radar-pipeline/
 │   ├── sampling/            # filters.py (content filters), sample.py (load, freeze, subsets)
 │   ├── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions),
 │   │                        # parse.py (validate LLM output), run_llm.py (annotation runs)
-│   ├── mapping/             # embed.py (embedding models from the config), map.py (embed, cluster, store criteria)
+│   ├── mapping/             # embed.py (embedding models, templates), cluster.py (UMAP, clustering, naming), map.py (mapping run)
 │   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
 ├── config.example.toml      # LLM and embedding models (copy to config.toml to change locally)

@@ -11,7 +11,9 @@ from radar.db.engine import Session
 from radar.db.models.annotation import AnnotationRun, CriterionMention, Sample
 from radar.db.models.mapping import Assignment, Criterion, Embedding, EmbeddingConfig, MappingRun
 from radar.provenance import get_code_version
+from radar.config import CONFIG
 from radar.mapping import embed
+from radar.mapping.cluster import cluster, name_cluster, reduce
 
 import logging
 
@@ -21,32 +23,49 @@ EMBED_BATCH_SIZE = 256  # inputs per call to the model; the new embeddings are c
 VECTOR_DTYPE = np.float32  # dtype of Embedding.vector (bytes)
 
 
-def map_criteria(annotation_run_ids, method, threshold = None, params = None, allow_dirty = False,
-                 embedding_provider = embed.DEFAULT_PROVIDER):
+def map_criteria(annotation_run_ids, method = None, threshold = None, params = None, allow_dirty = False,
+                 embedding_provider = None, template = None, reduction = None, naming = None):
     """Map the criterion mentions of the given annotation runs onto shared criteria.
 
-    Embeds every distinct rendered text once with the embedding provider from the config
-    (cached in `embedding`, per provider and model), clusters
-    the vectors and stores one mapping_run with its criteria and one assignment per mention.
-    Returns the id of the new mapping_run.
+    Embeds every distinct rendered text once with the embedding provider (cached in `embedding`,
+    per provider, model and template), projects the vectors with UMAP, clusters them and stores
+    one mapping_run with its criteria and one assignment per mention. Returns its id.
+
+    Every argument left out comes from [mapping] / [embedding] in the config:
+    method 'hdbscan' or 'agglomerative'; threshold (agglomerative only); params = options of
+    the clustering method; reduction = UMAP options; naming 'centroid' or 'frequent';
+    template = name of an [embedding.templates] entry. Everything used is stored in
+    mapping_run.params, so a run can be reproduced from the database alone.
     """
-    params = {} if params is None else params
+    defaults = CONFIG.get('mapping', {})
+    method = method or defaults.get('method', 'hdbscan')
+    options = dict(defaults.get(method, {}))
+    if method == 'agglomerative':
+        threshold = options.pop('threshold', None) if threshold is None else threshold
+        options.pop('threshold', None)
+    options.update(params or {})
+    reduction = {**defaults.get('reduction', {}), **(reduction or {})}
+    naming = naming or defaults.get('naming', 'centroid')
+    embedding_provider = embedding_provider or embed.DEFAULT_PROVIDER
+    template = template or embed.DEFAULT_TEMPLATE
+    pattern = embed.template(template)
+    code_version = get_code_version(allow_dirty = allow_dirty)  # before the expensive part: fail fast
 
     with Session() as session:
         # load and check the input
         annotation_runs = get_annotation_runs(session, annotation_run_ids)
-        topic = annotation_runs[0].sample.topic
+        topic_name = annotation_runs[0].sample.topic.name
         mentions = get_mentions(session, annotation_runs)
         if not mentions:
             raise ValueError(f'annotation runs {sorted(annotation_run_ids)} contain no criterion mentions')
 
         # embeddings: one per distinct rendered text, cached by input hash
-        embedding_config = get_or_create_embedding_config(session, embed.model_id(embedding_provider), embed.TEMPLATE)
+        embedding_config = get_or_create_embedding_config(session, embed.model_id(embedding_provider), pattern)
         mentions_by_hash = defaultdict(list)
         input_by_hash = {}
         label_by_hash = {}
         for mention in mentions:
-            input = render(embedding_config.template, topic, mention)
+            input = embed.render(pattern, topic_name, mention.label)
             input_hash = hash_input(input)
             mentions_by_hash[input_hash].append(mention)
             input_by_hash[input_hash] = input
@@ -64,20 +83,21 @@ def map_criteria(annotation_run_ids, method, threshold = None, params = None, al
                 vectors_by_hash[input_hash] = vector
             session.commit()
 
-        # clustering: one point per distinct text
-        hashes = list(mentions_by_hash)
+        # reduction and clustering: one point per distinct text, in a fixed order (reproducible)
+        hashes = sorted(mentions_by_hash)
         vectors = np.stack([vectors_by_hash[input_hash] for input_hash in hashes])
-        labels = cluster(vectors, method, threshold, params)
+        labels = cluster(reduce(vectors, **reduction), method, threshold, options)
         points_by_cluster = defaultdict(list)
         for point, label in enumerate(labels):
             points_by_cluster[label].append(point)
+        counts = [len(mentions_by_hash[input_hash]) for input_hash in hashes]
+        texts = [label_by_hash[input_hash] for input_hash in hashes]
 
         # store the run: mapping_run, mapping_input, criterion and assignment in one transaction
-        mapping_run = create_mapping_run(session, method, params, annotation_runs, embedding_config = embedding_config, threshold = threshold, allow_dirty = allow_dirty)
+        run_params = {'template': template, 'reduction': reduction, 'clustering': options, 'naming': naming}
+        mapping_run = create_mapping_run(session, method, run_params, annotation_runs, embedding_config = embedding_config, threshold = threshold, code_version = code_version)
         for points in points_by_cluster.values():
-            mean = vectors[points].mean(axis = 0)
-            closest = points[int(np.argmin(np.linalg.norm(vectors[points] - mean, axis = 1)))]
-            criterion = create_criterion(session, mapping_run, name = label_by_hash[hashes[closest]])
+            criterion = create_criterion(session, mapping_run, name = name_cluster(points, vectors, counts, texts, naming))
             for point in points:
                 for mention in mentions_by_hash[hashes[point]]:
                     create_assignment(session, mapping_run, mention, criterion)
@@ -85,47 +105,6 @@ def map_criteria(annotation_run_ids, method, threshold = None, params = None, al
         logger.info('mapping run %d: %d criteria for %d mentions', mapping_run.id, len(points_by_cluster), len(mentions))
         return mapping_run.id
 
-
-def cluster(vectors, method, threshold = None, params = None):
-    """Cluster id per point (row of vectors). Outliers become a cluster of their own.
-
-    method 'agglomerative': threshold is the cosine distance at which clusters stop merging,
-        params are passed to sklearn's AgglomerativeClustering (e.g. {'linkage': 'average'}).
-    method 'hdbscan': threshold is cluster_selection_epsilon (optional), params are passed
-        to hdbscan.HDBSCAN (e.g. {'min_cluster_size': 3}); its outliers (-1) are split up.
-    """
-    params = {} if params is None else params
-    if len(vectors) < 2:
-        return [0] * len(vectors)
-
-    if method == 'agglomerative':
-        from sklearn.cluster import AgglomerativeClustering
-        if threshold is None:
-            raise ValueError("method 'agglomerative' needs a threshold")
-        options = {'metric': 'cosine', 'linkage': 'average', **params}
-        labels = AgglomerativeClustering(n_clusters = None, distance_threshold = threshold, **options).fit_predict(vectors)
-    elif method == 'hdbscan':
-        import hdbscan
-        options = dict(params)
-        if threshold is not None:
-            options['cluster_selection_epsilon'] = threshold
-        labels = hdbscan.HDBSCAN(**options).fit_predict(vectors)
-    else:
-        raise ValueError(f'unknown clustering method: {method!r}')
-
-    # every outlier (-1) becomes a cluster of its own
-    labels = [int(label) for label in labels]
-    next_label = max(labels) + 1
-    for point, label in enumerate(labels):
-        if label == -1:
-            labels[point] = next_label
-            next_label += 1
-    return labels
-
-
-def render(template, topic, mention):
-    """Text that is sent to the embedding model for one mention."""
-    return template.format(topic = topic.name, label = mention.label)
 
 def hash_input(input):
     """Cache key of an embedding: SHA-256 of the rendered text sent to the model."""
@@ -165,9 +144,9 @@ def create_embedding(session, embedding_config, input, vector):
     session.add(embedding)
     return embedding
 
-def create_mapping_run(session, method, params, annotation_runs, embedding_config = None, threshold = None, allow_dirty = False):
+def create_mapping_run(session, method, params, annotation_runs, embedding_config = None, threshold = None, code_version = None):
     # annotation_runs fill mapping_input; embedding_config and threshold stay None for methods without them
-    mapping_run = MappingRun(embedding_config = embedding_config, method = method, threshold = threshold, params = params, annotation_runs = list(annotation_runs), code_version = get_code_version(allow_dirty=allow_dirty), created_at = datetime.now(timezone.utc))
+    mapping_run = MappingRun(embedding_config = embedding_config, method = method, threshold = threshold, params = params, annotation_runs = list(annotation_runs), code_version = code_version, created_at = datetime.now(timezone.utc))
     session.add(mapping_run)
     return mapping_run
 
