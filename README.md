@@ -10,7 +10,7 @@ Developed at the Institute of Data-Driven Technologies (IDT), FH Aachen.
 
 The pipeline is a research tool. It collects public discussions on a topic, extracts the criteria people use to justify their stance, unifies them into a shared vocabulary and derives salience weights from them. Every result is traceable to its inputs, so that runs can be repeated and compared (e.g. different models, prompts or sources).
 
-**Non-goals:** no web interface, no real-time processing, no analysis of individual persons.
+**Non-goals:** no web interface for results, no real-time processing, no analysis of individual persons. (A local annotation tool for human annotators is part of the project.)
 
 ## Pipeline stages
 
