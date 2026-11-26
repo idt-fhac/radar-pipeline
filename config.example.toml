@@ -34,6 +34,11 @@ workers = 3                        # parallel requests
 thinking = true                    # reasoning phase of Qwen models
 context_strategy = "text"          # "text" or "text+video_title"
 
+# --- Annotation by hand: local web tool (`radar annotate`) -----------------------------------
+
+[annotation_tool]
+port = 8765                        # the tool runs on http://127.0.0.1:<port>/
+
 # --- LLMs for the annotation: OpenAI-compatible chat completion APIs -----------------------
 #
 #   base_url       endpoint of the API

@@ -13,7 +13,7 @@ def test_merge_overrides_single_values_and_keeps_the_rest():
 
 
 def test_every_section_the_code_reads_exists():
-    for section in ['youtube', 'sampling', 'annotation', 'llm', 'embedding', 'mapping']:
+    for section in ['youtube', 'sampling', 'annotation', 'annotation_tool', 'llm', 'embedding', 'mapping']:
         assert section in CONFIG
 
 

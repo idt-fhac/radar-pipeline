@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RADAR Annotation</title>
+<!-- One file, no build step, nothing loaded from the internet: the tool works offline
+     and no comment text leaves this computer. -->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; color: #1c1c1c; background: #f3f4f6; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; padding: 0.6rem 1.2rem;
+           background: #1f2937; color: #f9fafb; position: sticky; top: 0; z-index: 1; }
+  header .grow { flex: 1; }
+  #run-info { color: #cbd5e1; margin-left: 0.6rem; }
+  progress { width: 12rem; vertical-align: middle; }
+  #layout { display: flex; align-items: flex-start; gap: 1.2rem; padding: 1.2rem; max-width: 1500px; margin: 0 auto; }
+  main { flex: 3; min-width: 0; }
+  aside { flex: 2; min-width: 0; position: sticky; top: 4rem; max-height: calc(100vh - 5rem); overflow: auto;
+          background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.4rem 1rem 1rem; }
+  body.guide-hidden aside { display: none; }
+  #guide-text { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.45; }
+  h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  .card, fieldset { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 1rem; margin: 0; }
+  fieldset { margin-top: 1rem; }
+  legend { font-weight: 600; padding: 0 0.4rem; }
+  .video { color: #4b5563; font-size: 0.9rem; margin-bottom: 0.7rem; }
+  #text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.15rem; line-height: 1.65; cursor: text; }
+  mark { background: #fde68a; border-radius: 2px; }
+  mark.marked { background: #bfdbfe; border-bottom: 2px solid #3b82f6; }
+  .hint { color: #6b7280; font-size: 0.85rem; margin: 0.6rem 0 0; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+  #quote { font-style: italic; }
+  input[type=text] { flex: 1; min-width: 12rem; }
+  input, select, button { font: inherit; padding: 0.4rem 0.6rem; border: 1px solid #9ca3af; border-radius: 6px; background: #fff; }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { background: #e5e7eb; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #1d4ed8; }
+  button.small { font-size: 0.8rem; padding: 0.15rem 0.45rem; }
+  header button { background: #374151; border-color: #4b5563; color: #f9fafb; }
+  header button:hover:not(:disabled) { background: #4b5563; }
+  #criteria { list-style: none; margin: 0; padding: 0; }
+  #criteria li { display: flex; align-items: baseline; gap: 0.6rem; background: #fff; border: 1px solid #d1d5db;
+                 border-radius: 6px; padding: 0.45rem 0.7rem; margin-bottom: 0.35rem; }
+  #criteria li.editing { border-color: #3b82f6; background: #eff6ff; }
+  #criteria .what { flex: 1; min-width: 0; }
+  #criteria .quote { color: #4b5563; font-style: italic; }
+  .sentiment { font-size: 0.8rem; border-radius: 999px; padding: 0.05rem 0.5rem; background: #e5e7eb; }
+  .sentiment.positive { background: #bbf7d0; }
+  .sentiment.negative { background: #fecaca; }
+  .stance { margin-top: 1.2rem; font-weight: 600; }
+  #message { min-height: 1.5rem; margin-top: 0.8rem; color: #b91c1c; font-weight: 600; }
+  .banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1rem; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.4rem; }
+  /* a locked run is shown read-only */
+  body.locked fieldset, body.locked #criteria button, body.locked #none, body.locked #save,
+  body.locked .edit-hint { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div><strong>RADAR Annotation</strong><span id="run-info"></span></div>
+  <div class="grow"></div>
+  <div><span id="progress-text"></span> <progress id="progress-bar" value="0" max="1"></progress></div>
+  <button id="toggle-guide" type="button">Leitfaden ausblenden</button>
+</header>
+
+<div id="layout">
+  <main>
+    <div id="banner" class="banner" hidden></div>
+
+    <section id="work" hidden>
+      <div class="card">
+        <div class="video">Video: <span id="video-title"></span></div>
+        <div id="text"></div>
+        <p class="hint" id="saved-note"></p>
+      </div>
+
+      <fieldset>
+        <legend id="form-title">Neues Kriterium</legend>
+        <div>
+          Zitat: <span id="quote"></span>
+          <button id="clear-quote" class="small" type="button">Zitat entfernen</button>
+        </div>
+        <div class="row">
+          <input id="label" type="text" autocomplete="off" placeholder="Kriterium: kurzer Oberbegriff, z. B. Reichweite">
+          <select id="sentiment">
+            <option value="">Sentiment …</option>
+            <option value="positive">positiv</option>
+            <option value="negative">negativ</option>
+            <option value="neutral">neutral</option>
+          </select>
+          <button id="add" type="button">Hinzufügen</button>
+          <button id="cancel-edit" type="button" hidden>Abbrechen</button>
+        </div>
+      </fieldset>
+
+      <h2>Kriterien dieses Kommentars</h2>
+      <ul id="criteria"></ul>
+      <p class="hint" id="no-criteria">Keine Kriterien eingetragen.</p>
+
+      <div class="row stance">
+        <label for="stance">Haltung des Kommentars zum Thema „<span id="topic"></span>“:</label>
+        <select id="stance">
+          <option value="">– bitte wählen –</option>
+          <option value="pro">dafür</option>
+          <option value="contra">dagegen</option>
+          <option value="mixed">gemischt</option>
+          <option value="unclear">unklar</option>
+        </select>
+      </div>
+
+      <div id="message" role="alert"></div>
+
+      <div class="buttons">
+        <button id="back" type="button">← Zurück</button>
+        <button id="none" type="button">Keine Kriterien</button>
+        <button id="save" type="button" class="primary">Speichern &amp; weiter</button>
+        <button id="skip" type="button" hidden></button>
+      </div>
+      <p class="hint edit-hint">
+        Tasten: <b>1</b> dafür · <b>2</b> dagegen · <b>3</b> gemischt · <b>4</b> unklar ·
+        <b>Enter</b> Speichern &amp; weiter (im Kriterium-Feld: Kriterium hinzufügen)
+      </p>
+    </section>
+
+    <section id="done" class="card" hidden>
+      <h2>Fertig</h2>
+      <p id="done-text"></p>
+      <button id="done-back" type="button">← Zurück zum letzten Kommentar</button>
+    </section>
+  </main>
+
+  <aside>
+    <h2>Leitfaden</h2>
+    <div id="guide-text"></div>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+const SENTIMENT_LABELS = {positive: 'positiv', negative: 'negativ', neutral: 'neutral'};
+const $ = (id) => document.getElementById(id);
+
+// --- State: everything the page knows; the render functions below draw it -------------------
+
+let run = null;             // answer of GET /api/run (sample, guideline, post_ids, ...)
+let annotated = new Set();  // ids of the posts that already have an annotation in this run
+let post = null;            // the post on screen: {id, text, video_title, annotation}
+let criteria = [];          // its criteria: [{label, sentiment, quote, start}], start = position of the quote in the text
+let marked = null;          // text marked for the criterion in the form: {quote, start}, or null
+let editing = null;         // index in `criteria` of the criterion loaded into the form, or null
+let unsaved = false;        // something on screen differs from what is stored
+let busy = false;           // a save request is on its way
+
+const isLocked = () => run.locked_by.length > 0;
+const firstOpen = () => run.post_ids.find((id) => !annotated.has(id)) ?? null;
+const formHasContent = () => $('label').value.trim() !== '' || marked !== null || editing !== null;
+
+// --- Server ----------------------------------------------------------------------------------
+
+// One request to the Flask routes in app.py; answers and request bodies are JSON.
+async function api(method, url, body) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      cache: 'no-store',
+      headers: body === undefined ? {} : {'Content-Type': 'application/json'},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error('Der Server antwortet nicht. Läuft „radar annotate“ noch im Terminal?');
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error((data && data.error) || `Fehler ${response.status}`);
+  return data;
+}
+
+// Wraps an async action so that a failed request shows up as a message instead of vanishing.
+const guarded = (action) => (...args) => action(...args).catch((error) => showMessage(error.message));
+
+// --- Loading and navigating ------------------------------------------------------------------
+
+async function start() {
+  run = await api('GET', '/api/run');
+  annotated = new Set(run.annotated_ids);
+  $('run-info').textContent =
+    `Lauf ${run.run_id} · ${run.annotator} · Stichprobe ${run.sample} · Leitfaden ${run.prompt}`;
+  $('topic').textContent = run.topic;
+  $('guide-text').textContent = run.guideline;
+
+  if (isLocked()) {
+    document.body.classList.add('locked');
+    $('stance').disabled = true;
+    showBanner(`Dieser Lauf ist Eingabe von Mapping-Lauf ${run.locked_by.join(', ')} ` +
+      'und kann nicht mehr geändert werden. Die Annotationen werden nur angezeigt.');
+  }
+
+  const open = firstOpen();
+  if (open !== null && !isLocked()) await showPost(open);
+  else if (isLocked() && run.post_ids.length > 0) await showPost(run.post_ids[0]);
+  else showDone();
+}
+
+async function showPost(id) {
+  post = await api('GET', `/api/posts/${id}`);
+  const saved = post.annotation;
+  criteria = saved
+    ? saved.criteria.map((c) => ({...c, start: c.quote ? post.text.indexOf(c.quote) : null}))
+    : [];
+  $('stance').value = saved ? saved.stance : '';
+  clearForm();
+  unsaved = false;
+  showMessage('');
+  $('work').hidden = false;
+  $('done').hidden = true;
+  $('video-title').textContent = post.video_title;
+  render();
+  window.scrollTo(0, 0);
+}
+
+async function showNext() {
+  const index = run.post_ids.indexOf(post.id);
+  if (index + 1 < run.post_ids.length) return showPost(run.post_ids[index + 1]);
+  if (firstOpen() !== null) return showPost(firstOpen());
+  showDone();
+}
+
+function showDone() {
+  post = null;
+  unsaved = false;
+  $('work').hidden = true;
+  $('done').hidden = false;
+  $('done-text').textContent = run.post_ids.length === 0
+    ? 'Die Stichprobe enthält keine Kommentare.'
+    : `Alle ${run.post_ids.length} Kommentare der Stichprobe sind annotiert. Du kannst dieses Fenster ` +
+      'schließen und den Server im Terminal mit Strg+C beenden.';
+  $('done-back').hidden = run.post_ids.length === 0;
+  renderProgress();
+}
+
+// Leaving a post drops what was not saved, so ask first.
+const mayLeave = () => !unsaved || confirm('Die Änderungen an diesem Kommentar sind nicht gespeichert. Trotzdem verlassen?');
+
+// --- Drawing the state -----------------------------------------------------------------------
+
+function render() {
+  renderText();
+  renderForm();
+  renderCriteria();
+  renderProgress();
+
+  const index = run.post_ids.indexOf(post.id);
+  $('back').disabled = index === 0;
+  $('saved-note').textContent = isLocked() ? ''
+    : annotated.has(post.id)
+      ? 'Dieser Kommentar ist schon gespeichert. Speichern ersetzt die frühere Annotation.'
+      : 'Textstelle mit der Maus markieren: Sie wird das Zitat des nächsten Kriteriums.';
+
+  const skip = $('skip');
+  if (isLocked()) {
+    skip.textContent = 'Weiter →';
+    skip.hidden = index + 1 >= run.post_ids.length;
+  } else {
+    skip.textContent = 'Zum nächsten offenen Kommentar →';
+    skip.hidden = !(annotated.has(post.id) && firstOpen() !== null);
+  }
+}
+
+// The comment text, with the quotes of the criteria and the text marked just now highlighted.
+// Built from text nodes and <mark> elements only (never innerHTML), so the text is shown as it is.
+function renderText() {
+  const spans = [];
+  criteria.forEach((criterion, index) => {
+    if (criterion.quote && criterion.start >= 0 && index !== editing) {
+      spans.push({start: criterion.start, end: criterion.start + criterion.quote.length, marked: false});
+    }
+  });
+  if (marked) spans.push({start: marked.start, end: marked.start + marked.quote.length, marked: true});
+
+  // Quotes may overlap, so the text is cut at every beginning and end of a span; each piece
+  // is plain text or one <mark>.
+  const cuts = new Set([0, post.text.length]);
+  for (const span of spans) cuts.add(span.start).add(span.end);
+  const borders = [...cuts].sort((a, b) => a - b);
+
+  const box = $('text');
+  box.textContent = '';
+  for (let i = 0; i + 1 < borders.length; i++) {
+    const piece = post.text.slice(borders[i], borders[i + 1]);
+    const covering = spans.filter((span) => span.start <= borders[i] && borders[i + 1] <= span.end);
+    if (covering.length === 0) {
+      box.append(piece);
+      continue;
+    }
+    const element = document.createElement('mark');
+    element.textContent = piece;
+    if (covering.some((span) => span.marked)) element.className = 'marked';
+    box.append(element);
+  }
+}
+
+function renderForm() {
+  $('form-title').textContent = editing === null ? 'Neues Kriterium' : 'Kriterium bearbeiten';
+  $('add').textContent = editing === null ? 'Hinzufügen' : 'Übernehmen';
+  $('cancel-edit').hidden = editing === null;
+  $('quote').textContent = marked ? `„${marked.quote}“` : '(keins – Textstelle im Kommentar mit der Maus markieren)';
+  $('clear-quote').hidden = marked === null;
+}
+
+function renderCriteria() {
+  const list = $('criteria');
+  list.textContent = '';
+  criteria.forEach((criterion, index) => {
+    const item = document.createElement('li');
+    if (index === editing) item.className = 'editing';
+
+    const what = document.createElement('span');
+    what.className = 'what';
+    const label = document.createElement('strong');
+    label.textContent = criterion.label;
+    const sentiment = document.createElement('span');
+    sentiment.className = 'sentiment ' + criterion.sentiment;
+    sentiment.textContent = SENTIMENT_LABELS[criterion.sentiment];
+    const quote = document.createElement('span');
+    quote.className = 'quote';
+    quote.textContent = criterion.quote ? `„${criterion.quote}“` : '(ohne Zitat)';
+    what.append(label, ' ', sentiment, ' ', quote);
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'small';
+    edit.textContent = 'Bearbeiten';
+    edit.addEventListener('click', () => editCriterion(index));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'small';
+    remove.textContent = 'Löschen';
+    remove.addEventListener('click', () => deleteCriterion(index));
+
+    item.append(what, edit, remove);
+    list.append(item);
+  });
+  $('no-criteria').hidden = criteria.length > 0;
+}
+
+function renderProgress() {
+  const total = run.post_ids.length;
+  const place = post ? `Kommentar ${run.post_ids.indexOf(post.id) + 1} von ${total} · ` : '';
+  $('progress-text').textContent = `${place}${annotated.size} von ${total} annotiert`;
+  $('progress-bar').max = Math.max(total, 1);
+  $('progress-bar').value = annotated.size;
+}
+
+function showMessage(text) {
+  $('message').textContent = text;
+}
+
+function showBanner(text) {
+  $('banner').hidden = false;
+  $('banner').textContent = text;
+}
+
+// --- Marking a quote -------------------------------------------------------------------------
+
+// Called after every mouse release: if text inside the comment is selected, it becomes the
+// quote of the criterion in the form. The position is counted in the original text, so the
+// quote is cut from post.text itself and is word for word what the database holds.
+function takeSelection() {
+  if (!post || isLocked()) return;
+  const selection = window.getSelection();
+  if (selection.rangeCount === 0 || selection.isCollapsed) return;
+  const box = $('text');
+  const range = selection.getRangeAt(0).cloneRange();
+  if (!range.intersectsNode(box)) return;
+  // a selection dragged beyond the comment is cut off at its borders
+  if (!box.contains(range.startContainer)) range.setStart(box, 0);
+  if (!box.contains(range.endContainer)) range.setEnd(box, box.childNodes.length);
+
+  // characters between the beginning of the comment and the beginning of the selection
+  const before = document.createRange();
+  before.selectNodeContents(box);
+  before.setEnd(range.startContainer, range.startOffset);
+  const selected = range.toString();
+  const quote = selected.trim();
+  if (quote === '') return;
+  const start = before.toString().length + selected.indexOf(quote);
+
+  if (post.text.slice(start, start + quote.length) !== quote) {
+    showMessage('Die Markierung stimmt nicht mit dem Kommentartext überein. Bitte noch einmal markieren.');
+    return;
+  }
+  marked = {quote, start};
+  unsaved = true;
+  selection.removeAllRanges();
+  showMessage('');
+  renderText();
+  renderForm();
+  $('label').focus();
+}
+
+// --- Criteria --------------------------------------------------------------------------------
+
+function clearForm() {
+  $('label').value = '';
+  $('sentiment').value = '';
+  marked = null;
+  editing = null;
+}
+
+// Puts the criterion of the form into the list (new or edited). Returns false if it is incomplete.
+function addCriterion() {
+  const label = $('label').value.trim();
+  const sentiment = $('sentiment').value;
+  if (label === '') {
+    showMessage('Bitte das Kriterium benennen (kurzer Oberbegriff).');
+    $('label').focus();
+    return false;
+  }
+  const twice = criteria.some((criterion, index) =>
+    index !== editing && criterion.label.toLowerCase() === label.toLowerCase());
+  if (twice) {
+    showMessage(`„${label}“ steht bei diesem Kommentar schon in der Liste. Jedes Kriterium nur einmal pro Kommentar.`);
+    $('label').focus();
+    return false;
+  }
+  if (sentiment === '') {
+    showMessage(`Bitte das Sentiment für „${label}“ wählen.`);
+    $('sentiment').focus();
+    return false;
+  }
+  const criterion = {label, sentiment, quote: marked ? marked.quote : null, start: marked ? marked.start : null};
+  if (editing === null) criteria.push(criterion);
+  else criteria[editing] = criterion;
+  clearForm();
+  unsaved = true;
+  showMessage('');
+  document.activeElement.blur();  // so that Enter and the number keys work on the whole comment again
+  render();
+  return true;
+}
+
+function editCriterion(index) {
+  const criterion = criteria[index];
+  editing = index;
+  $('label').value = criterion.label;
+  $('sentiment').value = criterion.sentiment;
+  marked = criterion.quote ? {quote: criterion.quote, start: criterion.start} : null;
+  showMessage('');
+  render();
+  $('label').focus();
+}
+
+function deleteCriterion(index) {
+  criteria.splice(index, 1);
+  if (editing === index) clearForm();
+  else if (editing !== null && editing > index) editing -= 1;
+  unsaved = true;
+  render();
+}
+
+// --- Saving ----------------------------------------------------------------------------------
+
+async function save(withoutCriteria) {
+  if (busy || !post || isLocked()) return;
+  // a criterion still in the form belongs to the annotation: add it, or stop if it is incomplete
+  if (!withoutCriteria && formHasContent() && !addCriterion()) return;
+  const stance = $('stance').value;
+  if (stance === '') {
+    showMessage('Bitte die Haltung des Kommentars wählen (Pflichtfeld).');
+    $('stance').focus();
+    return;
+  }
+  if (withoutCriteria && (criteria.length > 0 || formHasContent())
+      && !confirm('Die eingetragenen Kriterien verwerfen und „keine Kriterien“ speichern?')) return;
+
+  const body = {
+    stance,
+    criteria: withoutCriteria ? [] : criteria.map(({label, sentiment, quote}) => ({label, sentiment, quote})),
+  };
+  busy = true;
+  try {
+    await api('PUT', `/api/posts/${post.id}`, body);
+  } catch (error) {
+    throw new Error('Nicht gespeichert: ' + error.message);
+  } finally {
+    busy = false;
+  }
+  annotated.add(post.id);
+  unsaved = false;
+  await showNext();
+}
+
+// --- Events ----------------------------------------------------------------------------------
+
+$('add').addEventListener('click', addCriterion);
+$('cancel-edit').addEventListener('click', () => { clearForm(); render(); });
+$('clear-quote').addEventListener('click', () => { marked = null; unsaved = true; renderText(); renderForm(); });
+$('stance').addEventListener('change', () => { unsaved = true; showMessage(''); });
+$('save').addEventListener('click', guarded(() => save(false)));
+$('none').addEventListener('click', guarded(() => save(true)));
+$('back').addEventListener('click', guarded(async () => {
+  const index = run.post_ids.indexOf(post.id);
+  if (index > 0 && mayLeave()) await showPost(run.post_ids[index - 1]);
+}));
+$('skip').addEventListener('click', guarded(async () => {
+  if (isLocked()) await showNext();
+  else if (mayLeave()) await showPost(firstOpen());
+}));
+$('done-back').addEventListener('click', guarded(() => showPost(run.post_ids[run.post_ids.length - 1])));
+
+// after the browser has finished the selection that the mouse release ends
+document.addEventListener('mouseup', () => setTimeout(takeSelection, 0));
+
+document.addEventListener('keydown', (event) => {
+  if (!post || isLocked() || event.altKey || event.metaKey) return;
+  const inForm = event.target.id === 'label' || event.target.id === 'sentiment';
+  if (event.key === 'Enter') {
+    if (event.target.tagName === 'BUTTON') return;  // Enter on a button presses that button
+    event.preventDefault();
+    if (inForm && formHasContent() && !event.ctrlKey) addCriterion();
+    else guarded(() => save(false))();
+  } else if (!inForm && !event.ctrlKey && ['1', '2', '3', '4'].includes(event.key)) {
+    $('stance').selectedIndex = Number(event.key);  // index 0 is "bitte wählen"
+    unsaved = true;
+    showMessage('');
+  }
+});
+
+window.addEventListener('beforeunload', (event) => { if (unsaved) event.preventDefault(); });
+
+$('toggle-guide').addEventListener('click', () => {
+  const hidden = document.body.classList.toggle('guide-hidden');
+  $('toggle-guide').textContent = hidden ? 'Leitfaden einblenden' : 'Leitfaden ausblenden';
+  localStorage.setItem('radar-guide-hidden', hidden ? '1' : '');
+});
+if (localStorage.getItem('radar-guide-hidden')) $('toggle-guide').click();
+
+start().catch((error) => showBanner(error.message));
+</script>
+</body>
+</html>
