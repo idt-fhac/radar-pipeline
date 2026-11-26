@@ -143,7 +143,10 @@ def test_annotate_batch_thinking_switch(fake, thinking, expected):
 
 
 def test_annotate_batch_connection_error_does_not_raise(fake):
-    fake(error=APIConnectionError(request=None))
+    # built without __init__: its signature differs between openai versions (request is required in newer ones)
+    error = APIConnectionError.__new__(APIConnectionError)
+    Exception.__init__(error, 'Connection error.')
+    fake(error=error)
     result = annotate_batch('system', [{'id': 1, 'text': 'x'}])
     assert result['raw'] is None and result['parsed'] is None
     assert result['error'].startswith('APIConnectionError')
