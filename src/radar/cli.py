@@ -94,6 +94,25 @@ def build_parser():
     resume.add_argument('--workers', type=int)
     resume.set_defaults(handler=cmd_resume)
 
+    annotate = commands.add_parser('annotate', help='annotate a sample by hand in the browser')
+    annotate.add_argument('sample', help='sample name')
+    annotate.add_argument('prompt', help='prompt name; its text is shown as the annotation guideline')
+    annotate.add_argument('--annotator', required=True,
+                          help='your name; starting again with the same sample, prompt and name continues the run')
+    annotate.add_argument('--port', type=int, help='default from the config')
+    annotate.add_argument('--no-browser', action='store_true', help='do not open the browser')
+    annotate.add_argument('--allow-dirty', action='store_true')
+    annotate.set_defaults(handler=cmd_annotate)
+
+    export_human = commands.add_parser('export-human', help='write a human run to a JSON file')
+    export_human.add_argument('run_id', type=int)
+    export_human.add_argument('file', help='e.g. exports/run-12.json (exports/ is ignored by Git)')
+    export_human.set_defaults(handler=cmd_export_human)
+
+    import_human = commands.add_parser('import-human', help='read a human run from a JSON file')
+    import_human.add_argument('file')
+    import_human.set_defaults(handler=cmd_import_human)
+
     show = commands.add_parser('show', help='show the results of a run')
     show.add_argument('run_id', type=int)
     show.add_argument('--full', action='store_true', help='print the full comment texts')
@@ -181,23 +200,58 @@ def cmd_resume(args):
         resume_run(session, args.run_id, **given(args, 'max_rounds', 'workers'))
 
 
+def cmd_annotate(args):
+    from radar.db.engine import Session
+    from radar.annotation.human.app import serve
+    from radar.annotation.human.store import start_human_run
+    with Session() as session:
+        annotation_run, created = start_human_run(session, args.sample, args.prompt, args.annotator,
+                                                  allow_dirty=args.allow_dirty)
+        run_id = annotation_run.id
+    print(f'run {run_id} ({"new" if created else "continued"})')
+    serve(Session, run_id, open_browser=not args.no_browser, **given(args, 'port'))
+
+
+def cmd_export_human(args):
+    from radar.db.engine import Session
+    from radar.annotation.human.transfer import export_run, save_export
+    with Session() as session:
+        data = export_run(session, args.run_id)
+    save_export(data, args.file)
+    print(f'run {args.run_id} of {data["annotator"]!r}: {len(data["annotations"])} annotations -> {args.file}')
+
+
+def cmd_import_human(args):
+    from radar.db.engine import Session
+    from radar.annotation.human.transfer import import_run, load_export
+    data = load_export(args.file)
+    with Session() as session:
+        run_id = import_run(session, data)
+    print(f'run {run_id}: {len(data["annotations"])} annotations of {data["annotator"]!r} imported')
+
+
 def cmd_show(args):
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
     from radar.db.engine import Session
-    from radar.db.models.annotation import Annotation, Batch, CriterionMention
+    from radar.db.models.annotation import Annotation, AnnotationRun, Batch, CriterionMention
     from radar.db.models.collection import Post
-    from radar.annotation.run_llm import load_run
     with Session() as session:
-        annotation_run = load_run(session, args.run_id)
+        annotation_run = session.scalar(select(AnnotationRun).where(AnnotationRun.id == args.run_id).options(
+            selectinload(AnnotationRun.llm_run), selectinload(AnnotationRun.human_run),
+            selectinload(AnnotationRun.sample), selectinload(AnnotationRun.prompt_version)))
+        if annotation_run is None:
+            raise ValueError(f'unknown annotation run {args.run_id}')
         llm_run = annotation_run.llm_run
+        kind = (f'{llm_run.params.get("provider")} {llm_run.model}, thinking={llm_run.params.get("thinking")}, '
+                f'context={llm_run.context_strategy}') if llm_run else f'human {annotation_run.human_run.annotator!r}'
         print(f'run {annotation_run.id}: sample {annotation_run.sample.name!r}, '
-              f'prompt {annotation_run.prompt_version.name!r}, {llm_run.params.get("provider")} '
-              f'{llm_run.model}, thinking={llm_run.params.get("thinking")}, '
-              f'context={llm_run.context_strategy}, code {annotation_run.code_version[:12]}')
+              f'prompt {annotation_run.prompt_version.name!r}, {kind}, code {annotation_run.code_version[:12]}')
 
-        batches = session.execute(select(Batch.number, Batch.status)
-                                  .where(Batch.run_id == annotation_run.id).order_by(Batch.number)).all()
-        print('batches: ' + ', '.join(f'{number}:{status}' for number, status in batches))
+        if llm_run:
+            batches = session.execute(select(Batch.number, Batch.status)
+                                      .where(Batch.run_id == annotation_run.id).order_by(Batch.number)).all()
+            print('batches: ' + ', '.join(f'{number}:{status}' for number, status in batches))
 
         rows = session.execute(select(Post.id, Post.text, Annotation.stance)
                                .join(Annotation, Annotation.post_id == Post.id)
@@ -229,7 +283,7 @@ def cmd_runs(args):
                                       .group_by(Annotation.run_id)).all())
         for run in runs:
             kind = (f'llm {run.llm_run.params.get("provider")} {run.llm_run.model} '
-                    f'thinking={run.llm_run.params.get("thinking")}') if run.llm_run else 'human'
+                    f'thinking={run.llm_run.params.get("thinking")}') if run.llm_run else f'human {run.human_run.annotator}'
             print(f'{run.id:>4}  {run.started_at:%Y-%m-%d %H:%M}  {run.sample.name:<16} '
                   f'{run.prompt_version.name:<16} {kind}  annotated={counts.get(run.id, 0)}')
 
