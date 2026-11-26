@@ -3,7 +3,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
 from radar.annotation import parse
@@ -18,6 +18,10 @@ from radar.provenance import get_code_version
 # The same values the LLM runs store (parse.py translates the German words of the prompt).
 STANCES = list(parse.STANCES.values())
 SENTIMENTS = list(parse.SENTIMENTS.values())
+
+# Hint on likely typos (similar_label): "Ladeinfrastrukur" is 1 edit away from "Ladeinfrastruktur".
+MAX_EDIT_DISTANCE = 2
+LETTERS_PER_EDIT = 4  # labels shorter than 8 letters allow 1 edit, shorter than 4 only another case
 
 
 class RunLocked(ValueError):
@@ -140,6 +144,61 @@ def get_post(session, annotation_run, post_id):
                          for mention in mentions],
         }
     return result
+
+
+def run_labels(session, annotation_run):
+    """The labels the annotator has stored in this run so far, most frequent first.
+
+    Only this run: labels of LLM runs or other annotators would be suggestions from
+    outside and break the blind annotation.
+    :return: list of {'label', 'count'}; equal counts in alphabetical order
+    """
+    mentions = func.count().label('mentions')
+    rows = session.execute(
+        select(CriterionMention.label, mentions)
+        .where(CriterionMention.run_id == annotation_run.id)
+        .group_by(CriterionMention.label)
+        .order_by(mentions.desc(), CriterionMention.label))
+    return [{'label': label, 'count': count} for label, count in rows]
+
+
+def edit_distance(a, b):
+    """Levenshtein distance: how many letters must be inserted, deleted or replaced to turn a into b.
+
+    Row by row through the usual table: `previous[j]` is the distance between the
+    letters of a read so far and the first j letters of b.
+    """
+    previous = list(range(len(b) + 1))
+    for i, letter_a in enumerate(a, start=1):
+        current = [i]
+        for j, letter_b in enumerate(b, start=1):
+            current.append(min(previous[j] + 1,                             # delete letter_a
+                               current[j - 1] + 1,                          # insert letter_b
+                               previous[j - 1] + (letter_a != letter_b)))   # replace, or keep if equal
+        previous = current
+    return previous[-1]
+
+
+def similar_label(text, labels):
+    """The label of the run that `text` is probably a misspelling of, or None.
+
+    Only a hint for the annotator, nothing is corrected or refused. None if `text` is
+    one of the labels already. Otherwise the label within MAX_EDIT_DISTANCE (case ignored;
+    short labels allow less, one edit per LETTERS_PER_EDIT letters), the closest first,
+    then the most frequent.
+    :param labels: as returned by run_labels
+    :return: its entry {'label', 'count'} or None
+    """
+    text = text.strip()
+    if not text or any(entry['label'] == text for entry in labels):
+        return None
+    best, best_distance = None, None
+    for entry in labels:  # most frequent first, so "<" keeps the more frequent of two equally close labels
+        allowed = min(MAX_EDIT_DISTANCE, min(len(text), len(entry['label'])) // LETTERS_PER_EDIT)
+        distance = edit_distance(text.lower(), entry['label'].lower())
+        if distance <= allowed and (best is None or distance < best_distance):
+            best, best_distance = entry, distance
+    return best
 
 
 def clean_annotation(text, stance, criteria):

@@ -132,6 +132,12 @@ In the tool, mark a passage of the comment with the mouse (it becomes the quote)
 - Once a run is input of a mapping run it is locked and only shown, because the mapping refers to its criteria.
 - The server listens on `127.0.0.1` only and the page loads nothing from the internet.
 
+Help against typos and varying spellings of the same criterion:
+
+- The criterion field suggests the labels the annotator has already used **in this run**, most frequent first (labels of LLM runs or other annotators are never suggested). With the arrow keys and `Enter` a suggestion is taken over.
+- If the typed label is not one of them but very close to one (at most two letters inserted, deleted or replaced, case ignored; short labels allow less), a hint "Meintest du …?" appears. It is only a hint: a click takes the earlier label over, otherwise the typed one is stored as it is. The hint compares with what was stored before, so it also points to an earlier label that was itself misspelled.
+- The field uses the spell checker of the browser, which only underlines. Enable a German dictionary in the browser and use its basic (local) spell check: the enhanced variants (Chrome "Enhanced spell check", Edge "Microsoft Editor") send the typed text to the vendor.
+
 **A second annotator** works on their own computer:
 
 1. They get a copy of the production database `data/radar.db` (inside the research group only, never via Git) and the repository at the same commit, so `prompts/` is identical.

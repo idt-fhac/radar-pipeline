@@ -253,6 +253,72 @@ def test_run_in_a_mapping_run_is_locked(Session):
         assert count(session, Annotation) == 1
 
 
+# --- help with labels ------------------------------------------------------------------------
+
+def criterion(label):
+    return {'label': label, 'sentiment': 'neutral', 'quote': None}
+
+
+def test_run_labels_counts_only_the_labels_of_this_run(Session):
+    with Session() as session:
+        ids = [post_id(session, external_id) for external_id in ['c1', 'c2', 'c3']]
+        mine = start(session, 'Anna')
+        assert store.run_labels(session, mine) == []
+        store.save_annotation(session, mine, ids[0], 'pro', [criterion('Reichweite'), criterion('Preis')])
+        store.save_annotation(session, mine, ids[1], 'pro', [criterion('Reichweite'), criterion('Ladezeit')])
+        store.save_annotation(session, mine, ids[2], 'pro', [])
+        other = start(session, 'Ben')
+        store.save_annotation(session, other, ids[0], 'pro', [criterion('Umwelt'), criterion('Reichweite')])
+
+        assert store.run_labels(session, mine) == [  # most frequent first, then alphabetical
+            {'label': 'Reichweite', 'count': 2}, {'label': 'Ladezeit', 'count': 1}, {'label': 'Preis', 'count': 1}]
+        assert store.run_labels(session, other) == [
+            {'label': 'Reichweite', 'count': 1}, {'label': 'Umwelt', 'count': 1}]
+
+
+@pytest.mark.parametrize('a, b, distance', [
+    ('Ladeinfrastrukur', 'Ladeinfrastruktur', 1),  # one letter missing
+    ('Reichweite', 'Reichwiete', 2),               # two letters swapped = two replacements
+    ('Preis', 'Preise', 1),
+    ('Ladezeit', 'Ladeleistung', 5),               # z -> l, then s and ung inserted
+    ('', 'abc', 3),
+    ('Akku', 'Akku', 0),
+])
+def test_edit_distance(a, b, distance):
+    assert store.edit_distance(a, b) == distance
+    assert store.edit_distance(b, a) == distance
+
+
+LABELS = [{'label': 'Ladeinfrastruktur', 'count': 7}, {'label': 'Ladezeit', 'count': 3},
+          {'label': 'Preis', 'count': 2}, {'label': 'Preise', 'count': 1}, {'label': 'CO2', 'count': 1}]
+
+
+@pytest.mark.parametrize('typed, expected', [
+    ('Ladeinfrastrukur', 'Ladeinfrastruktur'),   # the typo this hint was built for
+    (' ladeinfrastruktur ', 'Ladeinfrastruktur'),  # only the case differs
+    ('Ladeinfrastruktur', None),                 # is a label of the run already
+    ('Ladeleistung', None),                      # similar topic, but another criterion
+    ('Ladezeiten', 'Ladezeit'),
+    ('Preiss', 'Preis'),                         # as close to 'Preise': the more frequent label wins
+    ('Preise', None),
+    ('Reis', 'Preis'),                           # short labels: one edit
+    ('Raus', None),                              # two edits are too many for a short label
+    ('CO3', None),                               # very short labels: no edit at all
+    ('co2', 'CO2'),
+    ('', None),
+])
+def test_similar_label(typed, expected):
+    similar = store.similar_label(typed, LABELS)
+    assert (similar and similar['label']) == expected
+    if similar:
+        assert similar in LABELS  # the entry with its count
+
+
+def test_similar_label_prefers_the_closer_label():
+    labels = [{'label': 'Ladezeiten', 'count': 9}, {'label': 'Ladezeit', 'count': 1}]
+    assert store.similar_label('Ladezeid', labels)['label'] == 'Ladezeit'
+
+
 # --- export and import -----------------------------------------------------------------------
 
 @pytest.fixture
@@ -364,6 +430,13 @@ def test_routes_show_save_and_report_errors(Session):
     assert saved.status_code == 200
     assert client.get(f'/api/posts/{c1}').get_json()['annotation'] == {'stance': 'mixed', 'criteria': CRITERIA}
     assert client.get('/api/run').get_json()['annotated_ids'] == [c1]
+
+    assert client.get('/api/labels').get_json() == [{'label': 'Ladekosten', 'count': 1},
+                                                    {'label': 'Reichweite', 'count': 1}]
+    similar = client.get('/api/similar-label', query_string={'label': 'Reichwiete'}).get_json()
+    assert similar == {'similar': {'label': 'Reichweite', 'count': 1}}
+    assert client.get('/api/similar-label', query_string={'label': 'Reichweite'}).get_json() == {'similar': None}
+    assert client.get('/api/similar-label').get_json() == {'similar': None}
 
     invalid = client.put(f'/api/posts/{c1}', json={'stance': 'dafuer', 'criteria': []})
     assert invalid.status_code == 400 and 'invalid stance' in invalid.get_json()['error']
