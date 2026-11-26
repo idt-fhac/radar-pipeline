@@ -4,13 +4,13 @@ Data pipeline of the RADAR project: reproducible, LLM-based extraction of decisi
 
 Developed at the Institute of Data-Driven Technologies (IDT), FH Aachen.
 
-> **Status:** early development. Collection (YouTube), sampling and the LLM client are implemented; LLM annotation runs, mapping and analysis are in progress. There is no command-line interface yet.
+> **Status:** early development. Collection (YouTube), sampling and LLM annotation runs are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet; analysis is in progress.
 
 ## Purpose
 
 The pipeline is a research tool. It collects public discussions on a topic, extracts the criteria people use to justify their stance, unifies them into a shared vocabulary and derives salience weights from them. Every result is traceable to its inputs, so that runs can be repeated and compared (e.g. different models, prompts or sources).
 
-**Non-goals:** no web interface, no real-time processing, no analysis of individual persons.
+**Non-goals:** no web interface for results, no real-time processing, no analysis of individual persons. (A local annotation tool for human annotators is part of the project.)
 
 ## Pipeline stages
 
@@ -39,6 +39,7 @@ The full data model with diagrams is documented in [docs/data-model.md](docs/dat
 - SQLAlchemy 2.x (ORM) for models and writes; analyses as SQL views
 - Alembic for schema migrations
 - OpenAI Python SDK for LLM access via OpenAI-compatible APIs (KI:connect.NRW, IDT)
+- sentence-transformers (F2LLM) for embeddings, scikit-learn and HDBSCAN for clustering, UMAP for visualisation
 
 ## Setup
 
@@ -47,6 +48,8 @@ git clone https://github.com/idt-fhac/radar-pipeline.git
 cd radar-pipeline
 uv sync
 ```
+
+All settings live in `config.example.toml` with their defaults: collection (`[youtube]`), sampling (`[sampling]`), annotation (`[annotation]`), models and mapping. The models are configured there as well: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change settings locally, create `config.toml` (ignored by Git) with only the values to change, under the same sections; everything else comes from `config.example.toml`. The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings. What is embedded per criterion is a named pattern in `[embedding.templates]` (placeholders `{topic}`, `{label}`); `[mapping]` holds the defaults of the mapping: UMAP projection before clustering, the method (`hdbscan` or `agglomerative`) with its options and the naming of criteria (`centroid` or `frequent`). Every value a mapping run uses is stored in `mapping_run.params`.
 
 Create a `.env` file in the repository root (never commit it):
 
@@ -124,8 +127,12 @@ radar-pipeline/
 │   │   └── youtube.py       # YouTube Data API client (no database access)
 │   ├── collection/          # collect.py (store a collection run), raw.py (clean raw JSON)
 │   ├── sampling/            # filters.py (content filters), sample.py (load, freeze, subsets)
-│   └── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions)
+│   ├── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions),
+│   │                        # parse.py (validate LLM output), run_llm.py (annotation runs)
+│   ├── mapping/             # embed.py (embedding models, templates), cluster.py (UMAP, clustering, naming), map.py (mapping run)
+│   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
+├── config.example.toml      # LLM and embedding models (copy to config.toml to change locally)
 ├── docs/                    # documentation, data model diagrams
 ├── migrations/              # Alembic migrations
 ├── tests/

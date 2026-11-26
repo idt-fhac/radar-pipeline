@@ -15,6 +15,9 @@ salt.bin
 *_key*.txt
 api_key.txt
 
+# Local model config (template: config.example.toml)
+config.toml
+
 # Python
 .venv/
 __pycache__/

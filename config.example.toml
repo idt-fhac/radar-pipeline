@@ -1,0 +1,126 @@
+# Settings of the pipeline, with their defaults. This file is in the repository.
+#
+# To change something locally, create config.toml (not in the repository) and put only the
+# values you want to change there, under the same section; everything else is taken from
+# this file. API keys never go here: key_env names the environment variable (e.g. in .env).
+# Every run stores the values it actually used in the database, so changing a default here
+# never changes old results.
+
+# --- Collection: YouTube --------------------------------------------------------------------
+
+[youtube]
+max_videos = 10                    # videos taken from the search results
+max_threads_per_video = 100        # top-level comments (threads) per video
+comment_order = "relevance"        # "relevance" or "time" (API default)
+replies = "all"                    # "all", "included" (up to 5 per thread, as delivered) or "none"
+
+# passed to search.list; part of the identity of a search query in the database
+[youtube.search_params]
+regionCode = "DE"
+relevanceLanguage = "de"
+
+# --- Sampling ---------------------------------------------------------------------------------
+
+[sampling]
+min_words = 5                      # posts with fewer words are dropped
+seed = 42                          # random generator of subsets
+
+# --- Annotation -------------------------------------------------------------------------------
+
+[annotation]
+batch_size = 20                    # comments per request
+max_rounds = 3                     # how often comments without a valid answer are resent
+workers = 3                        # parallel requests
+thinking = true                    # reasoning phase of Qwen models
+context_strategy = "text"          # "text" or "text+video_title"
+
+# --- LLMs for the annotation: OpenAI-compatible chat completion APIs -----------------------
+#
+#   base_url       endpoint of the API
+#   key_env        environment variable with the API key
+#   default_model  model used when a run names none (`uv run radar models <provider>` lists them)
+
+[llm]
+default = "idt"
+temperature = 0.0
+timeout = 600                      # seconds per request; batches with reasoning take minutes
+max_retries = 3                    # the SDK retries connection errors, 429 and 5xx
+
+# LLM API of the IDT, FH Aachen
+[llm.providers.idt]
+base_url = "https://chat.idt.fh-aachen.de/api/v1"
+key_env = "IDT_API_KEY"
+default_model = "qwen3-8-flash-next-int4"
+
+# KI:connect.NRW
+[llm.providers.kiconnect]
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+default_model = "qwen-qwen3-8-27b"
+
+# --- Embedding models for the mapping ------------------------------------------------------
+#
+#   backend = "openai"  calls an OpenAI-compatible endpoint; base_url is the API root
+#                       (the client appends /embeddings itself), key_env as above,
+#                       model as the provider names it
+#   backend = "local"   runs the model on this computer with sentence-transformers
+#                       model   Hugging Face id (downloaded on first use)
+#                       device  "cpu" or "cuda"
+#                       dtype   torch dtype, e.g. "bfloat16" or "float32"
+
+[embedding]
+default = "kiconnect"
+template = "instruct_category"     # which [embedding.templates] entry is embedded by default
+batch_size = 256                   # texts per request; new embeddings are stored after each
+timeout = 120
+max_retries = 3
+
+# KI:connect.NRW (only embedding model there, 20.11.)
+[embedding.providers.kiconnect]
+backend = "openai"
+base_url = "https://chat.kiconnect.nrw/api/v1"
+key_env = "KI_API_KEY"
+model = "qwen-qwen3-embedding-8b"
+
+# F2LLM, run locally
+[embedding.providers.f2llm]
+backend = "local"
+model = "codefuse-ai/F2LLM-v2-1.7B"
+device = "cpu"
+dtype = "bfloat16"
+
+# What is embedded per criterion. Placeholders: {topic} (topic of the sample), {label}.
+# The rendered pattern is stored with every mapping run (embedding_config.template), so
+# editing an entry here never changes old runs. Instructions ("Instruct: ...\nQuery: ...")
+# are the format of Qwen3-Embedding and F2LLM; write them in English, also for German labels.
+[embedding.templates]
+label             = "{label}"
+topic_label       = "{topic}: {label}"
+instruct_category = "Instruct: The following terms come from the domain {topic}. Identify the semantic category of the term\nQuery: {label}"
+instruct_group    = "Instruct: Group purchase criteria by meaning\nQuery: {topic}: {label}"
+instruct_domain   = "Instruct: Given a criterion from German online discussions about {topic}, represent its meaning for clustering\nQuery: {label}"
+
+# --- Mapping: reduction, clustering, naming -------------------------------------------------
+# Defaults of `map_criteria`; every value actually used is stored in mapping_run.params.
+# Tuned in the embedding playground on run 7 (qwen-qwen3-embedding-8b, 20.11.).
+
+[mapping]
+method = "hdbscan"                 # "hdbscan" or "agglomerative"
+naming = "centroid"                # criterion name: "centroid" (label closest to the
+                                   # mention-weighted mean) or "frequent" (most mentioned label)
+
+[mapping.reduction]                # UMAP before clustering, for every method
+n_components = 5
+n_neighbors = 15
+min_dist = 0.0
+metric = "cosine"
+random_state = 42
+
+[mapping.hdbscan]                  # scikit-learn's HDBSCAN; every outlier becomes its own criterion
+min_cluster_size = 8               # main knob: higher = fewer, broader criteria
+min_samples = 3                    # lower = fewer outliers
+
+[mapping.agglomerative]            # runs on the UMAP projection, like every method
+threshold = 0.3                    # distance at which clusters stop merging; not tuned yet
+linkage = "average"
+metric = "euclidean"               # UMAP's output space is euclidean

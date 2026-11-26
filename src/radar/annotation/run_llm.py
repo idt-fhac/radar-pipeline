@@ -12,23 +12,28 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 
 from radar.db.models.collection import Post, Container
+from radar.config import SOURCE, setting
 from radar.provenance import get_code_version
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE= 20
-DEFAULT_THINKING = True
-MAX_ROUNDS = 3
-WORKERS = 3
+BATCH_SIZE = setting('annotation', 'batch_size')
+DEFAULT_THINKING = setting('annotation', 'thinking')
+MAX_ROUNDS = setting('annotation', 'max_rounds')
+WORKERS = setting('annotation', 'workers')
 
 CONTEXT_STRATEGIES = [
     'text',
     'text+video_title'
 ]
+DEFAULT_CONTEXT_STRATEGY = setting('annotation', 'context_strategy')
+if DEFAULT_CONTEXT_STRATEGY not in CONTEXT_STRATEGIES:
+    raise ValueError(f'[annotation] context_strategy {DEFAULT_CONTEXT_STRATEGY!r} in {SOURCE} is unknown, '
+                     f'use one of: {", ".join(CONTEXT_STRATEGIES)}')
 
 BATCH_STATUSES = ['sent', 'done', 'partial', 'invalid', 'error']
 
-def build_items(posts, context_strategy='text'):
+def build_items(posts, context_strategy=DEFAULT_CONTEXT_STRATEGY):
     if context_strategy not in CONTEXT_STRATEGIES:
         raise ValueError(f'Unknown context_strategy: {context_strategy}\nChoose from {CONTEXT_STRATEGIES = }')
     items = []
@@ -55,7 +60,7 @@ def open_posts(session, annotation_run):
     return posts
 
 
-def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER, model = None, temperature = DEFAULT_TEMPERATURE, batch_size = BATCH_SIZE, context_strategy=CONTEXT_STRATEGIES[0], thinking=DEFAULT_THINKING, allow_dirty = False):
+def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER, model = None, temperature = DEFAULT_TEMPERATURE, batch_size = BATCH_SIZE, context_strategy=DEFAULT_CONTEXT_STRATEGY, thinking=DEFAULT_THINKING, allow_dirty = False):
     """Create an AnnotationRun with its LlmRun for a sample and a prompt, commit and return it.
 
     Only creates the run; sending happens in process_run.
@@ -69,7 +74,8 @@ def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER,
         raise ValueError(f'Unknown context_strategy: {context_strategy}\nChoose from {CONTEXT_STRATEGIES = }')
     prompt_version = get_or_create_prompt_version(session, prompt_name)
     annotation_run = AnnotationRun(sample_id = sample.id, prompt_version= prompt_version, code_version = get_code_version(allow_dirty), started_at = datetime.now(timezone.utc))
-    params = {'provider': provider, 'thinking': thinking}
+    # base_url too: the provider name alone does not say which server answered, the config can change
+    params = {'provider': provider, 'base_url': PROVIDERS[provider]['base_url'], 'thinking': thinking}
     llm_run = LlmRun(model=model, temperature = temperature, batch_size = batch_size, context_strategy = context_strategy, params=params)
     annotation_run.llm_run = llm_run
     session.add(annotation_run)
@@ -91,7 +97,7 @@ def make_batches(items, size=BATCH_SIZE):
     return batches
 
 def run_llm(session, sample_name, prompt_name, provider=DEFAULT_PROVIDER, model=None,
-            temperature=DEFAULT_TEMPERATURE, batch_size=BATCH_SIZE, context_strategy=CONTEXT_STRATEGIES[0],
+            temperature=DEFAULT_TEMPERATURE, batch_size=BATCH_SIZE, context_strategy=DEFAULT_CONTEXT_STRATEGY,
             thinking=DEFAULT_THINKING, allow_dirty=False, max_rounds=MAX_ROUNDS, workers=WORKERS):
     """Start a new LLM run and process it until done. Convenience for start_llm_run + process_run.
 

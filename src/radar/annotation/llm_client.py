@@ -1,4 +1,4 @@
-# llm_client.py — the only module that talks to an LLM (OpenAI-compatible APIs: KI:connect, IDT).
+# llm_client.py — the only module that talks to an LLM (OpenAI-compatible APIs, see config.example.toml).
 # Knows no database: takes a prompt and plain dicts, returns plain dicts.
 
 import json
@@ -8,18 +8,16 @@ import re
 
 from openai import OpenAI, OpenAIError
 
+from radar.config import providers, setting
+
 logger = logging.getLogger(__name__)
 
-PROVIDERS = {
-    'kiconnect': {'base_url': 'https://chat.kiconnect.nrw/api/v1', 'key_env': 'KI_API_KEY',
-                  'default_model': 'qwen-qwen3-8-27b'},
-    'idt':       {'base_url': 'https://chat.idt.fh-aachen.de/api/v1', 'key_env': 'IDT_API_KEY',
-                  'default_model': 'qwen3-8-flash-next-int4'},
-}
-DEFAULT_PROVIDER = 'idt'
-DEFAULT_TEMPERATURE = 0.0
-TIMEOUT = 600
-MAX_RETRIES = 3
+# Providers come from the [llm] section of config.toml / config.example.toml.
+# Each entry: base_url, key_env, default_model.
+PROVIDERS, DEFAULT_PROVIDER = providers('llm')
+DEFAULT_TEMPERATURE = setting('llm', 'temperature')
+TIMEOUT = setting('llm', 'timeout')
+MAX_RETRIES = setting('llm', 'max_retries')
 
 # just in the case of the model wrapping the JSON
 CODE_FENCE = re.compile(r'^```(?:json)?\s*(.*?)\s*```$', re.DOTALL)

@@ -6,21 +6,20 @@ import os
 
 import requests
 
+from radar.config import setting
+
 logger = logging.getLogger(__name__)
 
 API_URL = 'https://www.googleapis.com/youtube/v3'
 
-# --- default settings ---------------------------------------------------------
+# --- default settings: [youtube] in config.example.toml ------------------------
 # Search parameters are passed to search.list and define *which* videos are found.
 # They are part of the identity of a search query in the database.
-SEARCH_PARAMS = {
-    'regionCode': 'DE',
-    'relevanceLanguage': 'de',
-}
-MAX_VIDEOS = 10              # videos taken from the search results
-MAX_THREADS_PER_VIDEO = 100  # top-level comments (threads) per video
-COMMENT_ORDER = 'relevance'       # 'time' (API default) or 'relevance'
-REPLIES = 'all'              # 'all', 'included' (up to 5 per thread, as delivered) or 'none'
+SEARCH_PARAMS = setting('youtube', 'search_params')
+MAX_VIDEOS = setting('youtube', 'max_videos')
+MAX_THREADS_PER_VIDEO = setting('youtube', 'max_threads_per_video')
+COMMENT_ORDER = setting('youtube', 'comment_order')
+REPLIES = setting('youtube', 'replies')
 
 # --- API limits (fixed by YouTube, not settings) -------------------------------
 SEARCH_PAGE_SIZE = 50    # max. maxResults for search.list
