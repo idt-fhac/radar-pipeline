@@ -53,6 +53,20 @@ def create_app(session_factory, run_id):
             store.save_annotation(session, annotation_run, post_id, data.get('stance'), data.get('criteria'))
         return jsonify({'saved': post_id})
 
+    @app.get('/api/labels')
+    def get_labels():
+        with session_factory() as session:
+            annotation_run = store.load_human_run(session, run_id)
+            return jsonify(store.run_labels(session, annotation_run))
+
+    @app.get('/api/similar-label')
+    def get_similar_label():
+        typed = request.args.get('label', '')  # /api/similar-label?label=Ladeinfrastrukur
+        with session_factory() as session:
+            annotation_run = store.load_human_run(session, run_id)
+            labels = store.run_labels(session, annotation_run)
+        return jsonify({'similar': store.similar_label(typed, labels)})
+
     # Errors of store.py become JSON answers the page can show; RunLocked is a ValueError
     # too, Flask picks the handler of the most specific class.
     @app.errorhandler(store.RunLocked)
