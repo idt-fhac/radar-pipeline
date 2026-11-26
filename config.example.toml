@@ -1,8 +1,38 @@
-# Configuration of the models the pipeline talks to.
+# Settings of the pipeline, with their defaults. This file is in the repository.
 #
-# To change it locally, copy this file to config.toml (not in the repository) and edit it;
-# config.toml takes precedence over this file. API keys never go here: key_env names the
-# environment variable (e.g. in .env) that holds the key.
+# To change something locally, create config.toml (not in the repository) and put only the
+# values you want to change there, under the same section; everything else is taken from
+# this file. API keys never go here: key_env names the environment variable (e.g. in .env).
+# Every run stores the values it actually used in the database, so changing a default here
+# never changes old results.
+
+# --- Collection: YouTube --------------------------------------------------------------------
+
+[youtube]
+max_videos = 10                    # videos taken from the search results
+max_threads_per_video = 100        # top-level comments (threads) per video
+comment_order = "relevance"        # "relevance" or "time" (API default)
+replies = "all"                    # "all", "included" (up to 5 per thread, as delivered) or "none"
+
+# passed to search.list; part of the identity of a search query in the database
+[youtube.search_params]
+regionCode = "DE"
+relevanceLanguage = "de"
+
+# --- Sampling ---------------------------------------------------------------------------------
+
+[sampling]
+min_words = 5                      # posts with fewer words are dropped
+seed = 42                          # random generator of subsets
+
+# --- Annotation -------------------------------------------------------------------------------
+
+[annotation]
+batch_size = 20                    # comments per request
+max_rounds = 3                     # how often comments without a valid answer are resent
+workers = 3                        # parallel requests
+thinking = true                    # reasoning phase of Qwen models
+context_strategy = "text"          # "text" or "text+video_title"
 
 # --- LLMs for the annotation: OpenAI-compatible chat completion APIs -----------------------
 #
@@ -12,6 +42,9 @@
 
 [llm]
 default = "idt"
+temperature = 0.0
+timeout = 600                      # seconds per request; batches with reasoning take minutes
+max_retries = 3                    # the SDK retries connection errors, 429 and 5xx
 
 # LLM API of the IDT, FH Aachen
 [llm.providers.idt]
@@ -38,6 +71,9 @@ default_model = "qwen-qwen3-8-27b"
 [embedding]
 default = "kiconnect"
 template = "instruct_category"     # which [embedding.templates] entry is embedded by default
+batch_size = 256                   # texts per request; new embeddings are stored after each
+timeout = 120
+max_retries = 3
 
 # KI:connect.NRW (only embedding model there, 20.11.)
 [embedding.providers.kiconnect]

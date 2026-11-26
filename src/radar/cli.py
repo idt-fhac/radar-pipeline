@@ -57,7 +57,7 @@ def build_parser():
     sample.add_argument('--after', type=parse_time, help='published at or after (ISO date, UTC)')
     sample.add_argument('--before', type=parse_time, help='published before (ISO date, UTC)')
     sample.add_argument('--include-root-posts', action='store_true', help='also take the videos themselves')
-    sample.add_argument('--min-words', type=int, default=5, help='drop shorter posts (default 5, 0 = off)')
+    sample.add_argument('--min-words', type=int, help='drop shorter posts (default from the config, 0 = off)')
     sample.add_argument('--keep-empty', action='store_true', help='keep posts without letters')
     sample.add_argument('--keep-duplicates', action='store_true', help='keep posts with duplicate text')
     sample.add_argument('--allow-dirty', action='store_true')
@@ -67,7 +67,7 @@ def build_parser():
     subset.add_argument('name', help='unique sample name, e.g. "e-auto-300"')
     subset.add_argument('base', help='name of the sample to draw from')
     subset.add_argument('n', type=int, help='number of posts')
-    subset.add_argument('--seed', type=int, default=42)
+    subset.add_argument('--seed', type=int, help='default from the config')
     subset.add_argument('--allow-dirty', action='store_true')
     subset.set_defaults(handler=cmd_subset)
 
@@ -136,8 +136,8 @@ def cmd_sample(args):
             session, args.name, args.topic, source=args.source, video_ids=args.video_ids,
             published_after=args.after, published_before=args.before,
             include_root_posts=args.include_root_posts, drop_empty=not args.keep_empty,
-            min_words=args.min_words or None, drop_duplicates=not args.keep_duplicates,
-            allow_dirty=args.allow_dirty)
+            drop_duplicates=not args.keep_duplicates, allow_dirty=args.allow_dirty,
+            **({} if args.min_words is None else {'min_words': args.min_words or None}))
         session.commit()
         print_definition(sample)
 
@@ -146,8 +146,8 @@ def cmd_subset(args):
     from radar.db.engine import Session
     from radar.sampling.sample import create_subset
     with Session() as session:
-        subset = create_subset(session, args.name, args.base, args.n, seed=args.seed,
-                               allow_dirty=args.allow_dirty)
+        subset = create_subset(session, args.name, args.base, args.n, allow_dirty=args.allow_dirty,
+                               **given(args, 'seed'))
         session.commit()
         print_definition(subset)
 

@@ -6,7 +6,7 @@ import os
 
 import numpy as np
 
-from radar.config import CONFIG, CONFIG_FILE, providers
+from radar.config import CONFIG, SOURCE, providers, setting
 
 PROVIDERS, DEFAULT_PROVIDER = providers('embedding')
 
@@ -14,10 +14,10 @@ PROVIDERS, DEFAULT_PROVIDER = providers('embedding')
 TEMPLATES = CONFIG['embedding'].get('templates', {})
 DEFAULT_TEMPLATE = CONFIG['embedding'].get('template')
 if DEFAULT_TEMPLATE not in TEMPLATES:
-    raise ValueError(f'default embedding template {DEFAULT_TEMPLATE!r} is not defined in {CONFIG_FILE.name}')
+    raise ValueError(f'default embedding template {DEFAULT_TEMPLATE!r} is not defined in {SOURCE}')
 
-TIMEOUT = 120
-MAX_RETRIES = 3
+TIMEOUT = setting('embedding', 'timeout')
+MAX_RETRIES = setting('embedding', 'max_retries')
 
 _models = {}  # one loaded model or API client per provider, created on first use
 

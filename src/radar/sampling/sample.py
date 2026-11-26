@@ -7,11 +7,12 @@ from sqlalchemy.orm import selectinload
 from radar.db.engine import Session
 from radar.db.models.collection import Post, Container, Finding, CollectionRun, SearchQuery, Topic
 from radar.db.models.annotation import Sample
+from radar.config import setting
 from radar.provenance import get_code_version
 from radar.sampling.filters import remove_duplicates, remove_empty, remove_short
 
-MIN_WORDS = 5
-SEED = 42
+MIN_WORDS = setting('sampling', 'min_words')
+SEED = setting('sampling', 'seed')
 
 def _load_posts_stmt(session, topic_name, *, source=None, video_ids=None,
                published_after=None, published_before=None,

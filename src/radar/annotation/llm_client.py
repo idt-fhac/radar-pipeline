@@ -8,16 +8,16 @@ import re
 
 from openai import OpenAI, OpenAIError
 
-from radar.config import providers
+from radar.config import providers, setting
 
 logger = logging.getLogger(__name__)
 
 # Providers come from the [llm] section of config.toml / config.example.toml.
 # Each entry: base_url, key_env, default_model.
 PROVIDERS, DEFAULT_PROVIDER = providers('llm')
-DEFAULT_TEMPERATURE = 0.0
-TIMEOUT = 600
-MAX_RETRIES = 3
+DEFAULT_TEMPERATURE = setting('llm', 'temperature')
+TIMEOUT = setting('llm', 'timeout')
+MAX_RETRIES = setting('llm', 'max_retries')
 
 # just in the case of the model wrapping the JSON
 CODE_FENCE = re.compile(r'^```(?:json)?\s*(.*?)\s*```$', re.DOTALL)

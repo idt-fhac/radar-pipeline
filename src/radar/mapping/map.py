@@ -11,7 +11,7 @@ from radar.db.engine import Session
 from radar.db.models.annotation import AnnotationRun, CriterionMention, Sample
 from radar.db.models.mapping import Assignment, Criterion, Embedding, EmbeddingConfig, MappingRun
 from radar.provenance import get_code_version
-from radar.config import CONFIG
+from radar.config import CONFIG, setting
 from radar.mapping import embed
 from radar.mapping.cluster import cluster, name_cluster, reduce
 
@@ -19,7 +19,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-EMBED_BATCH_SIZE = 256  # inputs per call to the model; the new embeddings are committed after each batch
+EMBED_BATCH_SIZE = setting('embedding', 'batch_size')  # inputs per call; new embeddings are committed after each batch
 VECTOR_DTYPE = np.float32  # dtype of Embedding.vector (bytes)
 
 
