@@ -4,7 +4,7 @@ Data pipeline of the RADAR project: reproducible, LLM-based extraction of decisi
 
 Developed at the Institute of Data-Driven Technologies (IDT), FH Aachen.
 
-> **Status:** early development. Collection (YouTube), sampling and LLM annotation runs are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet; analysis is in progress.
+> **Status:** early development. Collection (YouTube), sampling, LLM annotation runs and a local tool for human annotation are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet; analysis is in progress.
 
 ## Purpose
 
@@ -39,6 +39,7 @@ The full data model with diagrams is documented in [docs/data-model.md](docs/dat
 - SQLAlchemy 2.x (ORM) for models and writes; analyses as SQL views
 - Alembic for schema migrations
 - OpenAI Python SDK for LLM access via OpenAI-compatible APIs (KI:connect.NRW, IDT)
+- Flask for the local annotation tool (one static page, no build step, nothing loaded from the internet)
 - sentence-transformers (F2LLM) for embeddings, scikit-learn and HDBSCAN for clustering, UMAP for visualisation
 
 ## Setup
@@ -49,7 +50,7 @@ cd radar-pipeline
 uv sync
 ```
 
-All settings live in `config.example.toml` with their defaults: collection (`[youtube]`), sampling (`[sampling]`), annotation (`[annotation]`), models and mapping. The models are configured there as well: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change settings locally, create `config.toml` (ignored by Git) with only the values to change, under the same sections; everything else comes from `config.example.toml`. The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings. What is embedded per criterion is a named pattern in `[embedding.templates]` (placeholders `{topic}`, `{label}`); `[mapping]` holds the defaults of the mapping: UMAP projection before clustering, the method (`hdbscan` or `agglomerative`) with its options and the naming of criteria (`centroid` or `frequent`). Every value a mapping run uses is stored in `mapping_run.params`.
+All settings live in `config.example.toml` with their defaults: collection (`[youtube]`), sampling (`[sampling]`), annotation (`[annotation]`), the annotation tool (`[annotation_tool]`), models and mapping. The models are configured there as well: `[llm]` for the annotation (OpenAI-compatible chat APIs with `base_url`, `key_env` – name of the environment variable holding the key – and `default_model`) and `[embedding]` for the mapping (`backend = "local"` for a sentence-transformers model run on this computer, `backend = "openai"` for an OpenAI-compatible `/embeddings` endpoint). To change settings locally, create `config.toml` (ignored by Git) with only the values to change, under the same sections; everything else comes from `config.example.toml`. The LLM provider and its `base_url` are stored with every run; the embedding provider and model are part of `embedding_config.model`, so different deployments never share cached embeddings. What is embedded per criterion is a named pattern in `[embedding.templates]` (placeholders `{topic}`, `{label}`); `[mapping]` holds the defaults of the mapping: UMAP projection before clustering, the method (`hdbscan` or `agglomerative`) with its options and the naming of criteria (`centroid` or `frequent`). Every value a mapping run uses is stored in `mapping_run.params`.
 
 Create a `.env` file in the repository root (never commit it):
 
@@ -111,6 +112,33 @@ uv run radar models kiconnect                                     # model ids of
 
 Prompts live in `prompts/` and are stored as prompt versions under their file name. A prompt that has been used in a run must not be edited; save changes as a new file (e.g. `extraction_v2.txt`).
 
+### Human annotation
+
+Humans annotate the same samples as the LLMs, in a local tool that writes directly to the database:
+
+```bash
+uv run radar --db prod annotate e-auto-300 extraction_v2 --annotator Anna   # opens http://127.0.0.1:8765/
+uv run radar --db prod export-human 12 exports/run-12.json                  # write a human run to a file
+uv run radar --db prod import-human exports/run-12.json                     # read it into another database
+```
+
+`annotate` creates the human run for (sample, prompt, annotator) or continues it: the tool shows the comments that have no annotation in this run yet, one after the other. Stop it with Ctrl+C at any time and start it again with the same arguments to go on. Options: `--port`, `--no-browser`, `--allow-dirty`.
+
+In the tool, mark a passage of the comment with the mouse (it becomes the quote), name the criterion, choose its sentiment and add it; a criterion without quote is possible. Choose the stance of the comment and save. "Keine Kriterien" stores an annotation without criteria, which is a result of its own and different from a comment not annotated yet. "Zurück" goes to the previous comment to correct it. Keys: `1`–`4` set the stance, `Enter` saves and moves on (inside the criterion field it adds the criterion).
+
+- The prompt version is shown as guideline, with the topic inserted: humans read the very text the LLM gets. The title of the video is always shown, which corresponds to the LLM context `text+video_title`.
+- Annotation is blind: results of other runs (LLM or human) are never shown.
+- Values are stored as in LLM runs: stance `pro`/`contra`/`mixed`/`unclear`, sentiment `positive`/`negative`/`neutral`; each criterion once per comment; a quote must occur word for word in the comment.
+- Once a run is input of a mapping run it is locked and only shown, because the mapping refers to its criteria.
+- The server listens on `127.0.0.1` only and the page loads nothing from the internet.
+
+**A second annotator** works on their own computer:
+
+1. They get a copy of the production database `data/radar.db` (inside the research group only, never via Git) and the repository at the same commit, so `prompts/` is identical.
+2. They annotate with `uv run radar --db prod annotate <sample> <prompt> --annotator <name>`.
+3. They export their run (`uv run radar --db prod runs` lists the run ids) with `export-human` and send the file back. `exports/` is ignored by Git; the file contains quotes from the comments.
+4. `import-human` adds the run to the main database. Posts are matched by the external ids of video and comment, not by `post.id`. The import checks that the sample exists under its name, the prompt has the same text (hash), every post belongs to the sample, all values are valid and the run was not imported before; if anything fails, nothing is written.
+
 ## Project structure
 
 ```
@@ -128,7 +156,9 @@ radar-pipeline/
 │   ├── collection/          # collect.py (store a collection run), raw.py (clean raw JSON)
 │   ├── sampling/            # filters.py (content filters), sample.py (load, freeze, subsets)
 │   ├── annotation/          # llm_client.py (LLM APIs), prompts.py (prompt versions),
-│   │                        # parse.py (validate LLM output), run_llm.py (annotation runs)
+│   │                        # parse.py (validate LLM output), run_llm.py (annotation runs),
+│   │                        # human/ (annotation tool: app.py server, store.py database access,
+│   │                        # transfer.py export/import, static/index.html the page)
 │   ├── mapping/             # embed.py (embedding models, templates), cluster.py (UMAP, clustering, naming), map.py (mapping run)
 │   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
