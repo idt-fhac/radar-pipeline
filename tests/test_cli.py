@@ -150,8 +150,14 @@ def test_annotate_needs_an_annotator():
     assert (args.annotator, args.port, args.no_browser) == ('Anna', None, True)
 
 
+def test_quotes_takes_any_number_of_runs():
+    assert (parse('quotes').run_ids, parse('quotes').list_quotes) == ([], False)
+    args = parse('quotes', '6', '7', '--list')
+    assert (args.run_ids, args.list_quotes) == ([6, 7], True)
+
+
 def test_every_command_has_a_handler():
     for argv in [('collect', 't', 's'), ('sample', 'n', 't'), ('subset', 'n', 'b', '1'), ('run', 's', 'p'),
                  ('resume', '1'), ('annotate', 's', 'p', '--annotator', 'A'), ('export-human', '1', 'f.json'),
-                 ('import-human', 'f.json'), ('show', '1'), ('runs',), ('models',)]:
+                 ('import-human', 'f.json'), ('show', '1'), ('runs',), ('quotes',), ('models',)]:
         assert callable(parse(*argv).handler)
