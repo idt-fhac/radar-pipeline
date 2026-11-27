@@ -53,9 +53,22 @@ def test_remove_empty_keeps_the_order():
     ('eins', 1, False),
     ('', 1, True),
     ('eins zwei', 0, False),
+    # links and @-mentions are not words
+    ('@3fa9c0e1b2d4 ja genau so ist', 5, True),
+    ('@3fa9c0e1b2d4 ja genau so ist es', 5, False),
+    ('ja @3fa9c0e1b2d4 und @0123456789ab genau so', 5, True),
+    ('schau dir https://example.com/a?b=c mal an', 5, True),
+    ('schau dir das mal an www.example.com', 5, False),
+    ('https://example.com @3fa9c0e1b2d4', 1, True),
 ])
 def test_is_short_post(text, threshold, short):
     assert is_short_post(post(text), threshold) is short
+
+
+def test_a_reply_is_not_longer_than_the_same_text_as_top_level_comment():
+    top_level, reply = post('stimmt genau so', 1), post('@3fa9c0e1b2d4 stimmt genau so', 2)
+    for threshold in range(6):
+        assert is_short_post(top_level, threshold) == is_short_post(reply, threshold)
 
 
 def test_remove_short_keeps_the_order_and_defaults_to_five_words():

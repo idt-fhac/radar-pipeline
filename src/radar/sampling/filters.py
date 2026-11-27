@@ -20,8 +20,18 @@ def remove_duplicates(posts: list[Post]) -> list[Post]:
     return result
 
 
+def without_links_and_mentions(text: str) -> str:
+    """The text with every link and @-mention replaced by a blank: neither says anything about the topic."""
+    text = URL.sub(' ', text)
+    return MENTION.sub(' ', text)  # pseudonymised mentions are hex and would count as letters and words
+
+
 def is_short_post(post: Post, threshold: int) -> bool:
-    return len(post.text.split()) < threshold
+    """True if the post has fewer words than threshold; links and @-mentions are not words.
+
+    Otherwise a reply, which often starts with '@<pseudonym>', would pass with one word less.
+    """
+    return len(without_links_and_mentions(post.text).split()) < threshold
 
 
 def remove_short(posts: list[Post], threshold: int = 5) -> list[Post]:
@@ -30,9 +40,7 @@ def remove_short(posts: list[Post], threshold: int = 5) -> list[Post]:
 
 def is_empty_post(post: Post) -> bool:
     """True if nothing but links, @-mentions, emojis, digits or punctuation is left."""
-    text = URL.sub('', post.text)
-    text = MENTION.sub('', text)  # pseudonymised mentions are hex and would count as letters
-    return not any(char.isalpha() for char in text)
+    return not any(char.isalpha() for char in without_links_and_mentions(post.text))
 
 
 def remove_empty(posts: list[Post]) -> list[Post]:

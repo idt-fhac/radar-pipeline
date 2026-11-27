@@ -22,7 +22,7 @@ relevanceLanguage = "de"
 # --- Sampling ---------------------------------------------------------------------------------
 
 [sampling]
-min_words = 5                      # posts with fewer words are dropped
+min_words = 5                      # posts with fewer words are dropped; links and @-mentions do not count
 seed = 42                          # random generator of subsets
 
 # --- Annotation -------------------------------------------------------------------------------
