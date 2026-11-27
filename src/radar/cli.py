@@ -58,7 +58,8 @@ def build_parser():
                         help='published at or after (ISO date or time; UTC unless it carries an offset)')
     sample.add_argument('--before', type=parse_time, help='published before (as --after)')
     sample.add_argument('--include-root-posts', action='store_true', help='also take the videos themselves')
-    sample.add_argument('--min-words', type=int, help='drop shorter posts (default from the config, 0 = off)')
+    sample.add_argument('--min-words', type=int, help='drop posts with fewer words, not counting links and @-mentions '
+                             '(default from the config, 0 = off)')
     sample.add_argument('--keep-empty', action='store_true', help='keep posts without letters')
     sample.add_argument('--keep-duplicates', action='store_true', help='keep posts with duplicate text')
     sample.add_argument('--allow-dirty', action='store_true')
