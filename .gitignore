@@ -1,4 +1,4 @@
-# Datenbank und Daten: enthalten Kommentartexte und Pseudonyme, gehoeren nie ins Repo
+# Database and data: contain comment texts and pseudonyms, never belong in the repository
 data/
 exports/
 *.db
@@ -9,13 +9,13 @@ exports/
 *.db-shm
 *.csv
 
-# Zugangsdaten und Schluessel
+# Credentials and keys (.env holds the API keys and SALT_HEX, the key of the pseudonyms)
 .env
 salt.bin
 *_key*.txt
 api_key.txt
 
-# Local model config (template: config.example.toml)
+# Local settings (defaults: config.example.toml)
 config.toml
 
 # Python
@@ -31,6 +31,6 @@ dist/
 .idea/
 .vscode/
 
-# Betriebssystem
+# Operating system
 Thumbs.db
 .DS_Store
