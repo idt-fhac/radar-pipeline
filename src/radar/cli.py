@@ -15,6 +15,9 @@ def main(argv=None):
     os.environ['RADAR_DB'] = args.db
     os.environ['RADAR_SQL_ECHO'] = '1' if args.sql else '0'
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+    # Output redirected into a file or pipe uses the Windows code page, which has no emojis;
+    # comments are full of them. Replace such characters there instead of failing.
+    sys.stdout.reconfigure(errors='replace')
     if args.handler is not cmd_models:
         from radar.db.engine import DB_PATH
         if not DB_PATH.exists():  # SQLite would silently create an empty file without tables
@@ -30,7 +33,9 @@ def main(argv=None):
 
 
 def build_parser():
-    from radar.annotation.llm_client import DEFAULT_PROVIDER, PROVIDERS  # does not touch the engine
+    # neither import touches the engine
+    from radar.annotation.llm_client import DEFAULT_PROVIDER, PROVIDERS
+    from radar.annotation.run_llm import CONTEXT_STRATEGIES
 
     parser = argparse.ArgumentParser(prog='radar', description='RADAR pipeline')
     parser.add_argument('--db', choices=['test', 'prod'], default=os.getenv('RADAR_DB', 'test'),
@@ -54,10 +59,12 @@ def build_parser():
     sample.add_argument('--source', help='only posts from this source, e.g. youtube')
     sample.add_argument('--video', action='append', dest='video_ids', metavar='VIDEO_ID',
                         help='only posts from this video (external id); repeatable')
-    sample.add_argument('--after', type=parse_time, help='published at or after (ISO date, UTC)')
-    sample.add_argument('--before', type=parse_time, help='published before (ISO date, UTC)')
+    sample.add_argument('--after', type=parse_time,
+                        help='published at or after (ISO date or time; UTC unless it carries an offset)')
+    sample.add_argument('--before', type=parse_time, help='published before (as --after)')
     sample.add_argument('--include-root-posts', action='store_true', help='also take the videos themselves')
-    sample.add_argument('--min-words', type=int, help='drop shorter posts (default from the config, 0 = off)')
+    sample.add_argument('--min-words', type=int, help='drop posts with fewer words, not counting links and @-mentions '
+                             '(default from the config, 0 = off)')
     sample.add_argument('--keep-empty', action='store_true', help='keep posts without letters')
     sample.add_argument('--keep-duplicates', action='store_true', help='keep posts with duplicate text')
     sample.add_argument('--allow-dirty', action='store_true')
@@ -78,13 +85,18 @@ def build_parser():
     run.add_argument('--model', help="model id (default: the provider's default model)")
     run.add_argument('--temperature', type=float)
     run.add_argument('--batch-size', type=int)
-    run.add_argument('--context', dest='context_strategy', choices=['text', 'text+video_title'])
+    run.add_argument('--context', dest='context_strategy', choices=CONTEXT_STRATEGIES,
+                     help='what the LLM gets besides the comment; +parent: for a reply, the comment it stands below')
     thinking = run.add_mutually_exclusive_group()
     thinking.add_argument('--thinking', dest='thinking', action='store_true', default=None,
                           help='reasoning phase on (default)')
     thinking.add_argument('--no-thinking', dest='thinking', action='store_false', help='reasoning phase off')
+    json_mode = run.add_mutually_exclusive_group()
+    json_mode.add_argument('--json-mode', dest='json_mode', action='store_true', default=None,
+                           help='server enforces a valid JSON answer (default from the config)')
+    json_mode.add_argument('--no-json-mode', dest='json_mode', action='store_false')
     run.add_argument('--max-rounds', type=int)
-    run.add_argument('--workers', type=int, help='parallel requests')
+    run.add_argument('--workers', type=int, help='parallel requests (KI:connect allows at most 3)')
     run.add_argument('--allow-dirty', action='store_true')
     run.set_defaults(handler=cmd_run)
 
@@ -121,6 +133,12 @@ def build_parser():
     runs = commands.add_parser('runs', help='list annotation runs')
     runs.set_defaults(handler=cmd_runs)
 
+    quotes = commands.add_parser('quotes', help='quote fidelity: how many quotes occur word for word in their comment')
+    quotes.add_argument('run_ids', type=int, nargs='*', metavar='run_id', help='annotation runs (default: all)')
+    quotes.add_argument('--list', dest='list_quotes', action='store_true',
+                        help='also print the quotes that do not occur in their comment')
+    quotes.set_defaults(handler=cmd_quotes)
+
     models = commands.add_parser('models', help='list the models a provider offers')
     models.add_argument('provider', nargs='?', default=DEFAULT_PROVIDER, choices=list(PROVIDERS))
     models.set_defaults(handler=cmd_models)
@@ -129,9 +147,12 @@ def build_parser():
 
 
 def parse_time(value):
-    """'2026-01-01' or '2026-01-01T12:00' -> datetime in UTC (naive values count as UTC)."""
+    """'2026-01-01' or '2026-01-01T12:00' -> datetime in UTC.
+
+    Values without time zone count as UTC; '2026-01-01T00:00+01:00' becomes 23:00 UTC of the day before.
+    """
     moment = datetime.fromisoformat(value)
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc) if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def given(args, *names):
@@ -140,11 +161,13 @@ def given(args, *names):
 
 
 def cmd_collect(args):
+    from radar.db.engine import Session
     from radar.collection.collect import collect_youtube
     options = {'max_videos': args.max_videos, 'max_threads_per_video': args.max_threads,
                'comment_order': args.order, 'replies': args.replies}
-    collect_youtube(args.topic, args.search_term, allow_dirty=args.allow_dirty,
-                    **{key: value for key, value in options.items() if value is not None})
+    with Session() as session:
+        collect_youtube(session, args.topic, args.search_term, allow_dirty=args.allow_dirty,
+                        **{key: value for key, value in options.items() if value is not None})
 
 
 def cmd_sample(args):
@@ -189,7 +212,7 @@ def cmd_run(args):
     with Session() as session:
         annotation_run = run_llm(session, args.sample, args.prompt, allow_dirty=args.allow_dirty,
                                  **given(args, 'provider', 'model', 'temperature', 'batch_size',
-                                         'context_strategy', 'thinking', 'max_rounds', 'workers'))
+                                         'context_strategy', 'thinking', 'json_mode', 'max_rounds', 'workers'))
         print(f'run {annotation_run.id}')
 
 
@@ -244,6 +267,7 @@ def cmd_show(args):
             raise ValueError(f'unknown annotation run {args.run_id}')
         llm_run = annotation_run.llm_run
         kind = (f'{llm_run.params.get("provider")} {llm_run.model}, thinking={llm_run.params.get("thinking")}, '
+                f'json_mode={llm_run.params.get("json_mode", False)}, '
                 f'context={llm_run.context_strategy}') if llm_run else f'human {annotation_run.human_run.annotator!r}'
         print(f'run {annotation_run.id}: sample {annotation_run.sample.name!r}, '
               f'prompt {annotation_run.prompt_version.name!r}, {kind}, code {annotation_run.code_version[:12]}')
@@ -286,6 +310,24 @@ def cmd_runs(args):
                     f'thinking={run.llm_run.params.get("thinking")}') if run.llm_run else f'human {run.human_run.annotator}'
             print(f'{run.id:>4}  {run.started_at:%Y-%m-%d %H:%M}  {run.sample.name:<16} '
                   f'{run.prompt_version.name:<16} {kind}  annotated={counts.get(run.id, 0)}')
+
+
+def cmd_quotes(args):
+    from radar.analysis.quotes import non_verbatim_quotes, quote_fidelity
+    from radar.db.engine import Session
+    with Session() as session:
+        rows = quote_fidelity(session, args.run_ids or None)
+        print(' run  mentions  quotes  verbatim    share')
+        for row in rows:
+            share = '      –' if row['share'] is None else f'{row["share"]:6.1%}'
+            print(f'{row["run_id"]:>4}  {row["mentions"]:>8}  {row["quotes"]:>6}  {row["verbatim"]:>8}  {share:>7}')
+        for run_id in sorted(set(args.run_ids) - {row['run_id'] for row in rows}):
+            print(f'{run_id:>4}  no criterion mentions')
+        if args.list_quotes:
+            for row in rows:
+                for quote in non_verbatim_quotes(session, row['run_id']):
+                    print(f'\nrun {row["run_id"]}, post {quote["post_id"]}, {quote["label"]!r}: {quote["quote"]}')
+                    print(f'    comment: {shorten(quote["text"], 300)}')
 
 
 def cmd_models(args):

@@ -61,6 +61,7 @@ def test_provider_config_is_complete(provider):
     assert config['key_env'] and config['default_model']
 
 
+@live  # a check of this computer's .env, not of the code: without keys only the live tests cannot run
 @pytest.mark.parametrize('provider', PROVIDERS)
 def test_provider_key_is_set(provider):
     assert os.getenv(PROVIDERS[provider]['key_env']), f'{PROVIDERS[provider]["key_env"]} missing in .env'
@@ -140,6 +141,16 @@ def test_annotate_batch_thinking_switch(fake, thinking, expected):
     client = fake(content='{"ergebnisse": []}')
     annotate_batch('system', [], thinking=thinking)
     assert client.calls[0]['extra_body'] == expected
+
+
+@pytest.mark.parametrize('json_mode, expected', [
+    (True, {'type': 'json_object'}),
+    (False, None),
+])
+def test_annotate_batch_json_mode(fake, json_mode, expected):
+    client = fake(content='{"ergebnisse": []}')
+    annotate_batch('system', [], json_mode=json_mode)
+    assert client.calls[0].get('response_format') == expected
 
 
 def test_annotate_batch_connection_error_does_not_raise(fake):

@@ -51,7 +51,7 @@ def render_prompt(template, topic):
 
 
 def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=None,
-                   temperature=DEFAULT_TEMPERATURE, thinking=None):
+                   temperature=DEFAULT_TEMPERATURE, thinking=None, json_mode=False):
     """Send one batch of comments and return the answer.
 
     :param system_prompt: rendered prompt (see render_prompt)
@@ -61,6 +61,8 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
     :param thinking: True/False switches the reasoning phase of Qwen models on/off
         (chat_template_kwargs.enable_thinking, tested with IDT 18.11.); None sends nothing,
         the provider's default applies
+    :param json_mode: True asks the server for a valid JSON object (response_format json_object);
+        the model copies quotes verbatim and sometimes leaves a '"' inside a string unescaped (27.11.)
     :return: dict with
         'model':   model name as reported by the API (can differ from the requested one)
         'raw':     the answer as a dict shaped like a non-streamed response, including the
@@ -73,6 +75,7 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
     model = model or PROVIDERS[provider]['default_model']
     user_message = json.dumps(items, ensure_ascii=False)
     extra_body = {} if thinking is None else {'chat_template_kwargs': {'enable_thinking': thinking}}
+    extra_args = {'response_format': {'type': 'json_object'}} if json_mode else {}
     try:
         stream = get_client(provider).chat.completions.create(
             model=model,
@@ -84,6 +87,7 @@ def annotate_batch(system_prompt, items, *, provider=DEFAULT_PROVIDER, model=Non
             stream=True,
             stream_options={'include_usage': True},
             extra_body=extra_body,
+            **extra_args,
         )
         raw = collect_stream(stream)
     except OpenAIError as error:

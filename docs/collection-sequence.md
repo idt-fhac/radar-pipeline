@@ -6,8 +6,8 @@ Participants:
 
 | Participant | Module | Role |
 |---|---|---|
-| `collect` | `radar.collection.collect` | Orchestrates the run, owns the DB session |
-| `DB` | `radar.db.engine.Session` + `radar.db.models.collection` | SQLAlchemy session and ORM tables |
+| `collect` | `radar.collection.collect` | Orchestrates the run, commits it step by step |
+| `DB` | session of the caller + `radar.db.models.collection` | SQLAlchemy session and ORM tables |
 | `provenance` | `radar.provenance` | Git commit as `code_version` |
 | `youtube` | `radar.sources.youtube` | Wraps the YouTube Data API v3 (paging, batching) |
 | `API` | YouTube Data API v3 | External service |
@@ -26,8 +26,8 @@ sequenceDiagram
     participant raw as collection/raw.py
     participant privacy as privacy.py
 
-    Caller->>collect: collect_youtube(topic_name, search_term, max_videos, ...)
-    collect->>DB: open Session()
+    Caller->>DB: open Session()
+    Caller->>collect: collect_youtube(session, topic_name, search_term, max_videos, ...)
 
     rect rgba(127,127,127,0.08)
     Note over collect,DB: Set up the run (topic, search_query, collection_run)
@@ -121,12 +121,13 @@ sequenceDiagram
 
     collect->>DB: collection_run.finished_at = now
     collect->>DB: commit()
-    collect->>DB: close Session
-    collect-->>Caller: None
+    collect-->>Caller: collection_run
+    Caller->>DB: close Session
 ```
 
 ## Notes
 
+- **Session.** The caller (the CLI, a test) opens the session and passes it in; `collect_youtube` never opens one itself, so it can run against any database. It commits itself, because a run is stored step by step.
 - **Commit points.** The run is committed before any API call, and then once per video. If the process aborts, the videos stored so far are kept and `collection_run.finished_at` stays `NULL`, which the data model defines as "aborted or running".
 - **Append, don't overwrite.** `topic`, `search_query`, `container`, `author` and `post` are *get-or-create*. A post that already exists from an earlier run keeps its text and `raw` ("first fetch only"). Only `finding` and `snapshot` are always created new, so every run records its own ranks, likes, reply counts and edit times.
 - **Reply tree.** The YouTube API only references the top-level comment of a reply, so every reply gets that comment as its parent. Because `get_comments` returns a top-level comment before its replies, the parent is already in `posts_by_external_id` when a reply is processed.
