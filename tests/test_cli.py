@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from argparse import Namespace
 from datetime import datetime, timezone
 
@@ -106,6 +108,19 @@ def test_run_refuses_contradicting_and_unknown_options():
                  ('run', 's', 'p', '--context', 'text+everything')]:
         with pytest.raises(SystemExit):
             parse(*argv)
+
+
+def test_context_choices_are_the_strategies_of_the_code():
+    from radar.annotation.run_llm import CONTEXT_STRATEGIES
+    for strategy in CONTEXT_STRATEGIES:
+        assert parse('run', 's', 'p', '--context', strategy).context_strategy == strategy
+
+
+def test_building_the_parser_does_not_import_the_engine():
+    # main() sets RADAR_DB after parsing; the engine reads it at import time, so it must not be loaded yet
+    code = ("import sys; from radar.cli import build_parser; build_parser(); "
+            "sys.exit('radar.db.engine' in sys.modules)")
+    assert subprocess.run([sys.executable, '-c', code]).returncode == 0
 
 
 def test_sample_options():

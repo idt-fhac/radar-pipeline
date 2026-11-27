@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import func, select
 
-from radar.annotation import prompts
+from radar.annotation import parse, prompts
 from radar.annotation.prompts import file_hash, get_or_create_prompt_version, text_hash
 from radar.db.models.annotation import PromptVersion
 
@@ -81,3 +83,26 @@ def test_hash_does_not_depend_on_the_line_endings(tmp_path):
 def test_hash_tells_texts_apart():
     assert text_hash('Text') != text_hash('Text ')
     assert len(text_hash('Text')) == 64  # SHA-256 as hex
+
+
+# --- the prompt files in prompts/ ------------------------------------------------------------
+
+PROMPT_FILES = sorted((Path(__file__).resolve().parents[1] / 'prompts').glob('*.txt'))
+
+
+@pytest.mark.parametrize('path', PROMPT_FILES, ids=lambda path: path.stem)
+def test_prompt_file_asks_for_what_the_parser_reads(path):
+    prompt = path.read_text(encoding='utf-8')
+    assert '{THEMA}' in prompt  # replaced by the topic of the sample
+    for key in ['"ergebnisse"', '"id"', '"position"', '"kriterien"', '"kriterium"', '"sentiment"', '"zitat"']:
+        assert key in prompt, f'{path.name} does not mention {key}'
+    for word in [*parse.STANCES, *parse.SENTIMENTS]:
+        assert word in prompt, f'{path.name} does not offer the value {word!r}'
+
+
+def test_extraction_v3_explains_the_parent_comment_and_changes_nothing_else():
+    v2, v3 = (path.read_text(encoding='utf-8') for path in PROMPT_FILES if path.stem in ('extraction_v2', 'extraction_v3'))
+    assert '"antwort_auf"' in v3 and '"antwort_auf"' not in v2
+    # everything after the description of the input is the same text
+    marker = 'Zeichenketten wie'
+    assert v3[v3.index(marker):] == v2[v2.index(marker):]
