@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from radar.annotation import parse
 from radar.annotation.llm_client import render_prompt
 from radar.annotation.prompts import get_or_create_prompt_version
-from radar.annotation.run_llm import open_posts
+from radar.annotation.run_llm import open_posts, parent_comment
 from radar.db.models.annotation import Annotation, AnnotationRun, CriterionMention, HumanRun, Sample
 from radar.db.models.collection import Post
 from radar.db.models.mapping import mapping_input
@@ -114,28 +114,32 @@ def run_state(session, annotation_run):
 
 
 def get_sample_post(session, annotation_run, post_id):
-    """The post with its container, or ValueError if it is not part of the run's sample."""
+    """The post with its container and parent, or ValueError if it is not part of the run's sample."""
     post = session.scalar(
         select(Post).join(Post.samples)
         .where(Post.id == post_id, Sample.id == annotation_run.sample_id)
-        .options(selectinload(Post.container)))
+        .options(selectinload(Post.container), selectinload(Post.parent)))
     if post is None:
         raise ValueError(f'post {post_id} is not part of sample {annotation_run.sample.name!r}')
     return post
 
 
 def get_post(session, annotation_run, post_id):
-    """One post as the tool shows it: text, video title and its annotation in THIS run (or None).
+    """One post as the tool shows it: text, video title, the comment it replies to (None if
+    it is no reply) and its annotation in THIS run (or None).
 
+    Title and parent comment are the context an LLM gets with 'text+video_title+parent'.
     Annotations of other runs are never read here: the annotator must not see what an LLM
     or another person answered.
     """
     post = get_sample_post(session, annotation_run, post_id)
+    parent = parent_comment(post)
     annotation = session.scalar(
         select(Annotation)
         .where(Annotation.run_id == annotation_run.id, Annotation.post_id == post_id)
         .options(selectinload(Annotation.criterion_mentions)))
-    result = {'id': post.id, 'text': post.text, 'video_title': post.container.title, 'annotation': None}
+    result = {'id': post.id, 'text': post.text, 'video_title': post.container.title,
+              'parent_text': parent.text if parent is not None else None, 'annotation': None}
     if annotation is not None:
         mentions = sorted(annotation.criterion_mentions, key=lambda mention: mention.id)
         result['annotation'] = {

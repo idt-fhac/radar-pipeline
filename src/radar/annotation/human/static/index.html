@@ -25,6 +25,10 @@
   fieldset { margin-top: 1rem; }
   legend { font-weight: 600; padding: 0 0.4rem; }
   .video { color: #4b5563; font-size: 0.9rem; margin-bottom: 0.7rem; }
+  /* the comment a reply stands below: context only, visibly not the text to annotate */
+  #parent { color: #4b5563; font-size: 0.9rem; border-left: 3px solid #d1d5db; padding: 0.1rem 0 0.1rem 0.8rem;
+            margin-bottom: 0.9rem; }
+  #parent-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11rem; overflow: auto; margin-top: 0.2rem; }
   #text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.15rem; line-height: 1.65; cursor: text; }
   mark { background: #fde68a; border-radius: 2px; }
   mark.marked { background: #bfdbfe; border-bottom: 2px solid #3b82f6; }
@@ -76,6 +80,10 @@
     <section id="work" hidden>
       <div class="card">
         <div class="video">Video: <span id="video-title"></span></div>
+        <div id="parent" hidden>
+          Antwort auf diesen Kommentar (nur Kontext, wird nicht annotiert):
+          <div id="parent-text"></div>
+        </div>
         <div id="text"></div>
         <p class="hint" id="saved-note"></p>
       </div>
@@ -157,7 +165,7 @@ const $ = (id) => document.getElementById(id);
 
 let run = null;             // answer of GET /api/run (sample, guideline, post_ids, ...)
 let annotated = new Set();  // ids of the posts that already have an annotation in this run
-let post = null;            // the post on screen: {id, text, video_title, annotation}
+let post = null;            // the post on screen: {id, text, video_title, parent_text, annotation}
 let criteria = [];          // its criteria: [{label, sentiment, quote, start}], start = position of the quote in the text
 let marked = null;          // text marked for the criterion in the form: {quote, start}, or null
 let editing = null;         // index in `criteria` of the criterion loaded into the form, or null
@@ -229,6 +237,9 @@ async function showPost(id) {
   $('work').hidden = false;
   $('done').hidden = true;
   $('video-title').textContent = post.video_title;
+  // a reply shows the comment it stands below; quotes can only be marked in the comment itself (#text)
+  $('parent').hidden = post.parent_text === null;
+  $('parent-text').textContent = post.parent_text ?? '';
   render();
   window.scrollTo(0, 0);
 }
