@@ -2,7 +2,7 @@
 
 The database is split into three blocks that follow the pipeline stages. Each block is implemented in its own module under `src/radar/db/models/`.
 
-Notation: `||--o{` means "exactly one to zero or more". Several `UK` markers in one table form **one** composite unique key.
+Notation: `||--o{` means "exactly one to zero or more". Several `UK` markers in one table form **one** composite unique key, unless a column is noted as unique on its own.
 
 ## Block 1: Collection (`collection.py`)
 
@@ -41,7 +41,7 @@ erDiagram
     container { int id PK
                 string source UK
                 string external_id UK
-                string title }
+                string title "as first fetched, mentions pseudonymised" }
     author { string pseudonym PK "HMAC of the account ID" }
     post { int id PK
            int container_id FK, UK
@@ -54,8 +54,8 @@ erDiagram
            }
     snapshot { int post_id PK, FK
                int collection_run_id PK, FK
-               int likes
-               int reply_count
+               int likes "NULL = hidden or not reported"
+               int reply_count "NULL = not reported"
                datetime updated_at "NULL = edit time unknown" }
 ```
 
@@ -90,27 +90,26 @@ erDiagram
     sample_post { int sample_id PK, FK
                   int post_id PK, FK }
     prompt_version { int id PK
-                     string name
+                     string name UK "unique on its own (file name in prompts/)"
                      string text
-                     string hash UK }
+                     string hash UK "unique on its own (SHA-256 of text)" }
     annotation_run { int id PK
                      int sample_id FK
                      int prompt_version_id FK
                      string code_version
                      datetime started_at }
     llm_run { int run_id PK, FK
-              string requested_model
-              string model "as returned by the API, NULL until first response"
+              string model "as requested; the name the API reports is in batch.raw_response"
               float temperature
               int batch_size
-              string context_strategy
-              json params }
+              string context_strategy "what the LLM gets besides the comment"
+              json params "provider, base_url, thinking, json_mode" }
     human_run { int run_id PK, FK
                 string annotator }
     batch { int id PK
             int run_id FK, UK
             int number UK
-            string status
+            string status "sent, done, partial, invalid or error"
             json raw_response "NULL if the request failed" }
     batch_post { int batch_id PK, FK
                  int post_id PK, FK
@@ -169,3 +168,11 @@ erDiagram
 ## From mentions to weights
 
 Salience weights are not stored; they are computed as SQL views along the chain post → annotation → criterion mention → assignment (for one mapping run) → criterion, e.g. distinct authors per criterion and month.
+
+## Computed, not stored
+
+Everything that follows from stored data is computed on request, so it cannot disagree with the data and needs no table or column:
+
+- **Quote fidelity** of a run (`radar.analysis.quotes`, `radar quotes`): the share of `criterion_mention.quote` values that occur word for word in `post.text` of their post.
+- **Root post or comment**: `post.parent_id IS NULL` marks the root post; a reply is a post whose parent has a parent itself.
+- **Kind of a run**: an annotation run is an LLM run or a human run by the subtype row it has.
