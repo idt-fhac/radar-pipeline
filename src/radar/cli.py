@@ -15,6 +15,9 @@ def main(argv=None):
     os.environ['RADAR_DB'] = args.db
     os.environ['RADAR_SQL_ECHO'] = '1' if args.sql else '0'
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+    # Output redirected into a file or pipe uses the Windows code page, which has no emojis;
+    # comments are full of them. Replace such characters there instead of failing.
+    sys.stdout.reconfigure(errors='replace')
     if args.handler is not cmd_models:
         from radar.db.engine import DB_PATH
         if not DB_PATH.exists():  # SQLite would silently create an empty file without tables
@@ -129,6 +132,12 @@ def build_parser():
 
     runs = commands.add_parser('runs', help='list annotation runs')
     runs.set_defaults(handler=cmd_runs)
+
+    quotes = commands.add_parser('quotes', help='quote fidelity: how many quotes occur word for word in their comment')
+    quotes.add_argument('run_ids', type=int, nargs='*', metavar='run_id', help='annotation runs (default: all)')
+    quotes.add_argument('--list', dest='list_quotes', action='store_true',
+                        help='also print the quotes that do not occur in their comment')
+    quotes.set_defaults(handler=cmd_quotes)
 
     models = commands.add_parser('models', help='list the models a provider offers')
     models.add_argument('provider', nargs='?', default=DEFAULT_PROVIDER, choices=list(PROVIDERS))
@@ -301,6 +310,24 @@ def cmd_runs(args):
                     f'thinking={run.llm_run.params.get("thinking")}') if run.llm_run else f'human {run.human_run.annotator}'
             print(f'{run.id:>4}  {run.started_at:%Y-%m-%d %H:%M}  {run.sample.name:<16} '
                   f'{run.prompt_version.name:<16} {kind}  annotated={counts.get(run.id, 0)}')
+
+
+def cmd_quotes(args):
+    from radar.analysis.quotes import non_verbatim_quotes, quote_fidelity
+    from radar.db.engine import Session
+    with Session() as session:
+        rows = quote_fidelity(session, args.run_ids or None)
+        print(' run  mentions  quotes  verbatim    share')
+        for row in rows:
+            share = '      –' if row['share'] is None else f'{row["share"]:6.1%}'
+            print(f'{row["run_id"]:>4}  {row["mentions"]:>8}  {row["quotes"]:>6}  {row["verbatim"]:>8}  {share:>7}')
+        for run_id in sorted(set(args.run_ids) - {row['run_id'] for row in rows}):
+            print(f'{run_id:>4}  no criterion mentions')
+        if args.list_quotes:
+            for row in rows:
+                for quote in non_verbatim_quotes(session, row['run_id']):
+                    print(f'\nrun {row["run_id"]}, post {quote["post_id"]}, {quote["label"]!r}: {quote["quote"]}')
+                    print(f'    comment: {shorten(quote["text"], 300)}')
 
 
 def cmd_models(args):
