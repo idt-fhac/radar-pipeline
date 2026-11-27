@@ -23,6 +23,16 @@ def test_parse_time_counts_values_without_time_zone_as_utc(value, expected):
     assert parse_time(value).utcoffset().total_seconds() == 0
 
 
+@pytest.mark.parametrize('value, expected', [
+    ('2026-01-01T00:00+01:00', datetime(2025, 12, 31, 23, 0, tzinfo=timezone.utc)),
+    ('2026-01-01T12:30:00-05:00', datetime(2026, 1, 1, 17, 30, tzinfo=timezone.utc)),
+])
+def test_parse_time_converts_other_time_zones_to_utc(value, expected):
+    # the database drops the time zone, so anything but UTC would be compared an offset off
+    assert parse_time(value) == expected
+    assert parse_time(value).utcoffset().total_seconds() == 0
+
+
 def test_given_passes_on_only_what_the_user_set():
     args = Namespace(batch_size=50, model=None, thinking=False, temperature=0.0)
     # False and 0.0 are values the user chose; only None means "not set"

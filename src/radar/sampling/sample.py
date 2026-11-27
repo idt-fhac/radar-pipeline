@@ -17,6 +17,7 @@ SEED = setting('sampling', 'seed')
 def _load_posts_stmt(session, topic_name, *, source=None, video_ids=None,
                published_after=None, published_before=None,
                include_root_posts=False):
+    published_after, published_before = _utc(published_after), _utc(published_before)
     stmt = select(Post).join(Post.container).join(Container.findings).join(Finding.collection_run).join(
         CollectionRun.search_query).join(SearchQuery.topics).where(Topic.name == topic_name).distinct()
     if source is not None:
@@ -41,8 +42,9 @@ def load_posts(session, topic_name, *, source=None, video_ids=None,
     :param source: only posts from this source, e.g. ``'youtube'``
     :param video_ids: only posts from these videos; a list of **external** ids
         (YouTube video ids as in ``container.external_id``), not internal ``container.id``
-    :param published_after: only posts published at or after this time (UTC, inclusive)
-    :param published_before: only posts published before this time (UTC, exclusive)
+    :param published_after: only posts published at or after this time (inclusive); a datetime
+        with another time zone is converted to UTC, one without time zone counts as UTC
+    :param published_before: only posts published before this time (exclusive), as above
     :param include_root_posts: also return root posts (the video itself), default False
     :return: list of matching posts, each at most once
     """
@@ -68,6 +70,8 @@ def create_sample(session, name, topic_name, *, source=None, video_ids=None,
     topic = session.scalar(select(Topic).where(Topic.name == topic_name))
     if topic is None:
         raise ValueError(f'unknown topic {topic_name!r}')
+    # here already, so the definition records the same UTC times the query uses
+    published_after, published_before = _utc(published_after), _utc(published_before)
 
     posts = load_posts(session, topic_name, source=source, video_ids=video_ids,
                        published_after=published_after, published_before=published_before,
@@ -138,6 +142,19 @@ def create_subset(session, name, base_name, n, *, seed=SEED, allow_dirty=False):
                     created_at=datetime.now(timezone.utc), posts=posts, subsets=[])
     session.add(subset)
     return subset
+
+
+def _utc(value):
+    """A time filter as UTC: an aware datetime is converted, a naive one counts as UTC.
+
+    SQLite stores no time zone and SQLAlchemy drops it when binding a value, so
+    '00:00+01:00' would be compared with the stored UTC times as if it were 00:00 UTC.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _iso(value):

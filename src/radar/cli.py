@@ -54,8 +54,9 @@ def build_parser():
     sample.add_argument('--source', help='only posts from this source, e.g. youtube')
     sample.add_argument('--video', action='append', dest='video_ids', metavar='VIDEO_ID',
                         help='only posts from this video (external id); repeatable')
-    sample.add_argument('--after', type=parse_time, help='published at or after (ISO date, UTC)')
-    sample.add_argument('--before', type=parse_time, help='published before (ISO date, UTC)')
+    sample.add_argument('--after', type=parse_time,
+                        help='published at or after (ISO date or time; UTC unless it carries an offset)')
+    sample.add_argument('--before', type=parse_time, help='published before (as --after)')
     sample.add_argument('--include-root-posts', action='store_true', help='also take the videos themselves')
     sample.add_argument('--min-words', type=int, help='drop shorter posts (default from the config, 0 = off)')
     sample.add_argument('--keep-empty', action='store_true', help='keep posts without letters')
@@ -133,9 +134,12 @@ def build_parser():
 
 
 def parse_time(value):
-    """'2026-01-01' or '2026-01-01T12:00' -> datetime in UTC (naive values count as UTC)."""
+    """'2026-01-01' or '2026-01-01T12:00' -> datetime in UTC.
+
+    Values without time zone count as UTC; '2026-01-01T00:00+01:00' becomes 23:00 UTC of the day before.
+    """
     moment = datetime.fromisoformat(value)
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc) if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def given(args, *names):

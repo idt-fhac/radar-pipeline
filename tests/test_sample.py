@@ -105,6 +105,40 @@ def test_time_window_includes_the_start_and_excludes_the_end(database, Corpus):
             'Tag 1', 'Tag 2']
 
 
+def test_time_window_with_another_time_zone_is_converted_to_utc(database, Corpus):
+    berlin = timezone(timedelta(hours=1))
+    with database() as session:
+        corpus = Corpus(session)
+        video = corpus.video('v1')
+        corpus.comment(video, '23:30 UTC am Vortag', published_at=DAY - timedelta(minutes=30))
+        corpus.comment(video, '00:30 UTC', published_at=DAY + timedelta(minutes=30))
+        session.commit()
+
+        # midnight in Berlin is 23:00 UTC of the day before: both comments are later
+        midnight_berlin = datetime(2026, 11, 1, tzinfo=berlin)
+        assert texts(load_posts(session, 'E-Auto', published_after=midnight_berlin)) == [
+            '00:30 UTC', '23:30 UTC am Vortag']
+        assert load_posts(session, 'E-Auto', published_before=midnight_berlin) == []
+        # the same moment written as UTC gives the same posts
+        assert len(load_posts(session, 'E-Auto', published_after=DAY - timedelta(hours=1))) == 2
+
+        sample = create_sample(session, 's', 'E-Auto', published_after=midnight_berlin, min_words=None)
+        assert sample.definition['published_after'] == '2026-10-31T23:00:00+00:00'  # recorded as UTC
+        assert sample.definition['loaded'] == 2
+
+
+def test_time_without_time_zone_counts_as_utc(database, Corpus):
+    with database() as session:
+        corpus = Corpus(session)
+        corpus.comment(corpus.video('v1'), 'Mitternacht UTC', published_at=DAY)
+        session.commit()
+
+        assert len(load_posts(session, 'E-Auto', published_after=datetime(2026, 11, 1))) == 1
+        assert load_posts(session, 'E-Auto', published_before=datetime(2026, 11, 1)) == []
+        sample = create_sample(session, 's', 'E-Auto', published_after=datetime(2026, 11, 1), min_words=None)
+        assert sample.definition['published_after'] == '2026-11-01T00:00:00+00:00'
+
+
 # --- create_sample ---------------------------------------------------------------------------
 
 def test_create_sample_freezes_the_filtered_posts_and_records_the_attrition(database, Corpus):
@@ -145,6 +179,21 @@ def test_create_sample_keeps_the_order_of_the_filter_steps(database, Corpus):
         definition = session.scalar(select(Sample.definition))
         assert [step['name'] for step in definition['filters']] == [
             'remove_empty', 'remove_short', 'remove_duplicates']
+
+
+def test_mentions_and_links_do_not_help_a_post_over_the_word_limit(database, Corpus):
+    with database() as session:
+        corpus = Corpus(session)
+        video = corpus.video('v1')
+        top = corpus.comment(video, 'Die Reichweite reicht im Alltag völlig')
+        corpus.comment(top, '@3fa9c0e1b2d4 das stimmt so nicht')                # 4 words after the mention
+        corpus.comment(top, '@3fa9c0e1b2d4 das stimmt so aber nicht')           # 5 words
+        corpus.comment(video, 'siehe https://example.com/test hier steht es')   # 4 words without the link
+        sample = create_sample(session, 's', 'E-Auto')
+        assert sample.definition['filters'][1] == {'name': 'remove_short', 'min_words': 5, 'remaining': 2}
+        session.commit()
+        assert sample_texts(session, 's') == ['@3fa9c0e1b2d4 das stimmt so aber nicht',
+                                              'Die Reichweite reicht im Alltag völlig']
 
 
 def test_filters_can_be_switched_off_and_are_then_not_recorded(database, Corpus):
