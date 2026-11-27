@@ -39,8 +39,6 @@ def collect_youtube(session, topic_name, search_term, max_videos = youtube.MAX_V
         video_id = vid['id']['videoId']
         if video_id not in vid_details:
             continue
-        container = get_or_create_container(session, source = search_query.source, external_id = video_id, title = vid['snippet']['title'])
-        create_finding(session, collection_run = collection_run, container = container, rank = rank)
         published_at = datetime.fromisoformat(vid_details[video_id]['snippet']['publishedAt'])
         likes = int(vid_details[video_id]['statistics'].get('likeCount')) if vid_details[video_id]['statistics'].get('likeCount') is not None else None
         comment_count = int(vid_details[video_id]['statistics'].get('commentCount')) if vid_details[video_id]['statistics'].get('commentCount') is not None else None
@@ -49,6 +47,10 @@ def collect_youtube(session, topic_name, search_term, max_videos = youtube.MAX_V
         handles = raw.build_handle_map(comments)
 
         video_raw = raw.clean_video(vid_details[video_id], handles)
+        # title from the cleaned video details, not from the search result: search.list
+        # escapes HTML ('&amp;') and its title would be stored with plain @-mentions
+        container = get_or_create_container(session, source = search_query.source, external_id = video_id, title = video_raw['snippet']['title'])
+        create_finding(session, collection_run = collection_run, container = container, rank = rank)
         channel = get_or_create_author(session, video_raw['snippet']['channelId'])
         root = get_or_create_post(session, container = container, external_id = video_id, text = video_raw['snippet']['description'], published_at = published_at, author = channel, raw = video_raw)
         create_snapshot(session, post = root, collection_run = collection_run, likes = likes, reply_count = comment_count, updated_at = published_at)
