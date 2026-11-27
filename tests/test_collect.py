@@ -172,6 +172,26 @@ def test_video_becomes_container_finding_and_root_post(database, one_video):
         assert snapshot.updated_at == root.published_at
 
 
+def test_container_title_comes_from_the_video_details_not_from_the_search(database, api):
+    api.add(video('v1', title='Reichweite & Verbrauch | @kanalname'))
+    with database() as session:
+        collect_youtube(session, 'E-Auto', 'Verbrenner-Aus')
+        title = session.scalar(select(Container.title))
+        # unescaped and with the mention pseudonymised, exactly as in the raw JSON of the root post
+        assert title == f'Reichweite & Verbrauch | @{pseudonym("youtube", "@kanalname")}'
+        assert title == post(session, 'v1').raw['snippet']['title']
+
+
+def test_container_title_stays_as_first_fetched(database, api):
+    api.add(video('v1', title='erster Titel'))
+    with database() as session:
+        collect_youtube(session, 'E-Auto', 'Verbrenner-Aus')
+    api.videos['v1'] = video('v1', title='umbenannt')
+    with database() as session:
+        collect_youtube(session, 'E-Auto', 'Verbrenner-Aus')
+        assert session.scalar(select(Container.title)) == 'erster Titel'
+
+
 def test_video_with_hidden_likes_and_no_comment_count_gets_nulls(database, api):
     api.add(video('v1', likes=None, comment_count=None))
     with database() as session:
@@ -222,8 +242,9 @@ def test_nothing_that_names_a_person_reaches_the_posts(database, one_video):
     with database() as session:
         stored = ' '.join(json.dumps([row.text, row.raw, row.author_pseudonym], ensure_ascii=False)
                           for row in session.scalars(select(Post)))
+        stored += ' '.join(session.scalars(select(Container.title)))
         for plain in ['anna', 'UC-anna', 'UC-ben', 'UC-kanal', 'Kanalname', '@ben', 'fremd', 'geloescht',
-                      'yt3.ggpht.com']:
+                      'yt3.ggpht.com', 'Suchtitel']:
             assert plain not in stored
 
 
