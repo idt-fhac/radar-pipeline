@@ -25,7 +25,8 @@ WORKERS = setting('annotation', 'workers')
 
 CONTEXT_STRATEGIES = [
     'text',
-    'text+video_title'
+    'text+video_title',
+    'text+video_title+parent',  # replies also get the comment they stand below
 ]
 DEFAULT_CONTEXT_STRATEGY = setting('annotation', 'context_strategy')
 if DEFAULT_CONTEXT_STRATEGY not in CONTEXT_STRATEGIES:
@@ -44,9 +45,28 @@ def build_items(posts, context_strategy=DEFAULT_CONTEXT_STRATEGY):
         match context_strategy:
             case 'text+video_title':
                 item['video'] = post.container.title
+            case 'text+video_title+parent':
+                item['video'] = post.container.title
+                parent = parent_comment(post)
+                if parent is not None:
+                    item['antwort_auf'] = parent.text
         item['text'] = post.text
         items.append(item)
     return items
+
+
+def parent_comment(post):
+    """The comment a reply stands below, or None for a post that is no reply.
+
+    The parent of a top-level comment is the root post (on YouTube the video with its
+    description as text). It is no context of its own: the title already stands for the video.
+    post.parent must be loaded (open_posts does that).
+    """
+    parent = post.parent
+    if parent is None or parent.parent_id is None:
+        return None
+    return parent
+
 
 def open_posts(session, annotation_run):
     already_annotated = select(Annotation.post_id).where(Annotation.post_id == Post.id,Annotation.run_id == annotation_run.id)
@@ -54,7 +74,7 @@ def open_posts(session, annotation_run):
         select(Post)
         .join(Post.samples)
         .where(Sample.id == annotation_run.sample_id, ~exists(already_annotated))
-        .options(selectinload(Post.container))
+        .options(selectinload(Post.container), selectinload(Post.parent))
         .order_by(Post.id)
     )
     posts = session.scalars(stmt).all()

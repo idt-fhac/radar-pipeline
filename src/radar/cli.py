@@ -30,7 +30,9 @@ def main(argv=None):
 
 
 def build_parser():
-    from radar.annotation.llm_client import DEFAULT_PROVIDER, PROVIDERS  # does not touch the engine
+    # neither import touches the engine
+    from radar.annotation.llm_client import DEFAULT_PROVIDER, PROVIDERS
+    from radar.annotation.run_llm import CONTEXT_STRATEGIES
 
     parser = argparse.ArgumentParser(prog='radar', description='RADAR pipeline')
     parser.add_argument('--db', choices=['test', 'prod'], default=os.getenv('RADAR_DB', 'test'),
@@ -80,7 +82,8 @@ def build_parser():
     run.add_argument('--model', help="model id (default: the provider's default model)")
     run.add_argument('--temperature', type=float)
     run.add_argument('--batch-size', type=int)
-    run.add_argument('--context', dest='context_strategy', choices=['text', 'text+video_title'])
+    run.add_argument('--context', dest='context_strategy', choices=CONTEXT_STRATEGIES,
+                     help='what the LLM gets besides the comment; +parent: for a reply, the comment it stands below')
     thinking = run.add_mutually_exclusive_group()
     thinking.add_argument('--thinking', dest='thinking', action='store_true', default=None,
                           help='reasoning phase on (default)')

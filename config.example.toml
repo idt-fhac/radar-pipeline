@@ -33,7 +33,11 @@ max_rounds = 3                     # how often comments without a valid answer a
 workers = 3                        # parallel requests
 thinking = true                    # reasoning phase of Qwen models
 json_mode = true                   # server enforces valid JSON (response_format json_object)
-context_strategy = "text+video_title"  # "text" or "text+video_title"; humans see the title in the annotation tool too
+# What the LLM gets besides the comment: "text" (nothing), "text+video_title" or
+# "text+video_title+parent" (a reply also gets the comment it stands below; needs a prompt
+# that explains the field "antwort_auf", e.g. extraction_v3). The annotation tool always
+# shows humans the title and, for a reply, that comment.
+context_strategy = "text+video_title"
 
 # --- Annotation by hand: local web tool (`radar annotate`) -----------------------------------
 
