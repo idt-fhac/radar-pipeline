@@ -61,6 +61,7 @@ def test_provider_config_is_complete(provider):
     assert config['key_env'] and config['default_model']
 
 
+@live  # a check of this computer's .env, not of the code: without keys only the live tests cannot run
 @pytest.mark.parametrize('provider', PROVIDERS)
 def test_provider_key_is_set(provider):
     assert os.getenv(PROVIDERS[provider]['key_env']), f'{PROVIDERS[provider]["key_env"]} missing in .env'
