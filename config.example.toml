@@ -30,7 +30,7 @@ seed = 42                          # random generator of subsets
 [annotation]
 batch_size = 20                    # comments per request
 max_rounds = 3                     # how often comments without a valid answer are resent
-workers = 3                        # parallel requests
+workers = 3                        # parallel requests; KI:connect allows no more than 3
 thinking = true                    # reasoning phase of Qwen models
 json_mode = true                   # server enforces valid JSON (response_format json_object)
 # What the LLM gets besides the comment: "text" (nothing), "text+video_title" or
@@ -63,7 +63,7 @@ base_url = "https://chat.idt.fh-aachen.de/api/v1"
 key_env = "IDT_API_KEY"
 default_model = "qwen3-8-flash-next-int4"
 
-# KI:connect.NRW
+# KI:connect.NRW (at most 3 parallel requests: keep [annotation] workers and --workers at 3 or below)
 [llm.providers.kiconnect]
 base_url = "https://chat.kiconnect.nrw/api/v1"
 key_env = "KI_API_KEY"

@@ -96,7 +96,7 @@ def build_parser():
                            help='server enforces a valid JSON answer (default from the config)')
     json_mode.add_argument('--no-json-mode', dest='json_mode', action='store_false')
     run.add_argument('--max-rounds', type=int)
-    run.add_argument('--workers', type=int, help='parallel requests')
+    run.add_argument('--workers', type=int, help='parallel requests (KI:connect allows at most 3)')
     run.add_argument('--allow-dirty', action='store_true')
     run.set_defaults(handler=cmd_run)
 
