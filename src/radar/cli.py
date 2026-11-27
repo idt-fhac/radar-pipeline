@@ -83,6 +83,10 @@ def build_parser():
     thinking.add_argument('--thinking', dest='thinking', action='store_true', default=None,
                           help='reasoning phase on (default)')
     thinking.add_argument('--no-thinking', dest='thinking', action='store_false', help='reasoning phase off')
+    json_mode = run.add_mutually_exclusive_group()
+    json_mode.add_argument('--json-mode', dest='json_mode', action='store_true', default=None,
+                           help='server enforces a valid JSON answer (default from the config)')
+    json_mode.add_argument('--no-json-mode', dest='json_mode', action='store_false')
     run.add_argument('--max-rounds', type=int)
     run.add_argument('--workers', type=int, help='parallel requests')
     run.add_argument('--allow-dirty', action='store_true')
@@ -189,7 +193,7 @@ def cmd_run(args):
     with Session() as session:
         annotation_run = run_llm(session, args.sample, args.prompt, allow_dirty=args.allow_dirty,
                                  **given(args, 'provider', 'model', 'temperature', 'batch_size',
-                                         'context_strategy', 'thinking', 'max_rounds', 'workers'))
+                                         'context_strategy', 'thinking', 'json_mode', 'max_rounds', 'workers'))
         print(f'run {annotation_run.id}')
 
 
@@ -244,6 +248,7 @@ def cmd_show(args):
             raise ValueError(f'unknown annotation run {args.run_id}')
         llm_run = annotation_run.llm_run
         kind = (f'{llm_run.params.get("provider")} {llm_run.model}, thinking={llm_run.params.get("thinking")}, '
+                f'json_mode={llm_run.params.get("json_mode", False)}, '
                 f'context={llm_run.context_strategy}') if llm_run else f'human {annotation_run.human_run.annotator!r}'
         print(f'run {annotation_run.id}: sample {annotation_run.sample.name!r}, '
               f'prompt {annotation_run.prompt_version.name!r}, {kind}, code {annotation_run.code_version[:12]}')

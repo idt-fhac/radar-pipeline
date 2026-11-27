@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = setting('annotation', 'batch_size')
 DEFAULT_THINKING = setting('annotation', 'thinking')
+DEFAULT_JSON_MODE = setting('annotation', 'json_mode')
 MAX_ROUNDS = setting('annotation', 'max_rounds')
 WORKERS = setting('annotation', 'workers')
 
@@ -60,7 +61,7 @@ def open_posts(session, annotation_run):
     return posts
 
 
-def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER, model = None, temperature = DEFAULT_TEMPERATURE, batch_size = BATCH_SIZE, context_strategy=DEFAULT_CONTEXT_STRATEGY, thinking=DEFAULT_THINKING, allow_dirty = False):
+def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER, model = None, temperature = DEFAULT_TEMPERATURE, batch_size = BATCH_SIZE, context_strategy=DEFAULT_CONTEXT_STRATEGY, thinking=DEFAULT_THINKING, json_mode=DEFAULT_JSON_MODE, allow_dirty = False):
     """Create an AnnotationRun with its LlmRun for a sample and a prompt, commit and return it.
 
     Only creates the run; sending happens in process_run.
@@ -75,7 +76,8 @@ def start_llm_run(session, sample_name, prompt_name, provider =DEFAULT_PROVIDER,
     prompt_version = get_or_create_prompt_version(session, prompt_name)
     annotation_run = AnnotationRun(sample_id = sample.id, prompt_version= prompt_version, code_version = get_code_version(allow_dirty), started_at = datetime.now(timezone.utc))
     # base_url too: the provider name alone does not say which server answered, the config can change
-    params = {'provider': provider, 'base_url': PROVIDERS[provider]['base_url'], 'thinking': thinking}
+    params = {'provider': provider, 'base_url': PROVIDERS[provider]['base_url'], 'thinking': thinking,
+              'json_mode': json_mode}
     llm_run = LlmRun(model=model, temperature = temperature, batch_size = batch_size, context_strategy = context_strategy, params=params)
     annotation_run.llm_run = llm_run
     session.add(annotation_run)
@@ -98,7 +100,8 @@ def make_batches(items, size=BATCH_SIZE):
 
 def run_llm(session, sample_name, prompt_name, provider=DEFAULT_PROVIDER, model=None,
             temperature=DEFAULT_TEMPERATURE, batch_size=BATCH_SIZE, context_strategy=DEFAULT_CONTEXT_STRATEGY,
-            thinking=DEFAULT_THINKING, allow_dirty=False, max_rounds=MAX_ROUNDS, workers=WORKERS):
+            thinking=DEFAULT_THINKING, json_mode=DEFAULT_JSON_MODE, allow_dirty=False,
+            max_rounds=MAX_ROUNDS, workers=WORKERS):
     """Start a new LLM run and process it until done. Convenience for start_llm_run + process_run.
 
     Parameters as in start_llm_run and process_run.
@@ -106,7 +109,7 @@ def run_llm(session, sample_name, prompt_name, provider=DEFAULT_PROVIDER, model=
     """
     annotation_run = start_llm_run(session, sample_name, prompt_name, provider=provider, model=model,
                                    temperature=temperature, batch_size=batch_size,
-                                   context_strategy=context_strategy, thinking=thinking,
+                                   context_strategy=context_strategy, thinking=thinking, json_mode=json_mode,
                                    allow_dirty=allow_dirty)
     process_run(session, annotation_run, max_rounds=max_rounds, workers=workers)
     return annotation_run
@@ -158,7 +161,9 @@ def process_run(session, annotation_run, *, max_rounds=MAX_ROUNDS, workers=WORKE
     llm_run = annotation_run.llm_run
     system_prompt = render_prompt(annotation_run.prompt_version.text, annotation_run.sample.topic.name)
     settings = {'provider': llm_run.params['provider'], 'model': llm_run.model,
-                'temperature': llm_run.temperature, 'thinking': llm_run.params.get('thinking')}
+                'temperature': llm_run.temperature, 'thinking': llm_run.params.get('thinking'),
+                # older runs have no json_mode in params: they ran without it, so resume them without it
+                'json_mode': llm_run.params.get('json_mode', False)}
 
     reported_model = None
     for round_number in range(1, max_rounds + 1):
@@ -221,12 +226,12 @@ def next_batch_number(session, llm_run):
 def send_batch(system_prompt, items, settings):
     """Send one batch and validate the answer. Runs in a worker thread: no session, no database.
 
-    :param settings: plain dict (provider, model, temperature, thinking); ORM objects stay in the main thread
+    :param settings: plain dict (provider, model, temperature, thinking, json_mode); ORM objects stay in the main thread
     :return: (llm_client result, annotations, problems) from annotate_batch and parse_response
     """
     result = annotate_batch(system_prompt, items, provider=settings['provider'],
                             model=settings['model'], temperature=settings['temperature'],
-                            thinking=settings['thinking'])
+                            thinking=settings['thinking'], json_mode=settings['json_mode'])
     if result['error'] is not None and result['raw'] is None:
         return result, {}, [result['error']]
     annotations, problems = parse_response(result['parsed'], [item['id'] for item in items])

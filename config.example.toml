@@ -32,6 +32,7 @@ batch_size = 20                    # comments per request
 max_rounds = 3                     # how often comments without a valid answer are resent
 workers = 3                        # parallel requests
 thinking = true                    # reasoning phase of Qwen models
+json_mode = true                   # server enforces valid JSON (response_format json_object)
 context_strategy = "text+video_title"  # "text" or "text+video_title"; humans see the title in the annotation tool too
 
 # --- Annotation by hand: local web tool (`radar annotate`) -----------------------------------

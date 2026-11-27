@@ -142,6 +142,16 @@ def test_annotate_batch_thinking_switch(fake, thinking, expected):
     assert client.calls[0]['extra_body'] == expected
 
 
+@pytest.mark.parametrize('json_mode, expected', [
+    (True, {'type': 'json_object'}),
+    (False, None),
+])
+def test_annotate_batch_json_mode(fake, json_mode, expected):
+    client = fake(content='{"ergebnisse": []}')
+    annotate_batch('system', [], json_mode=json_mode)
+    assert client.calls[0].get('response_format') == expected
+
+
 def test_annotate_batch_connection_error_does_not_raise(fake):
     # built without __init__: its signature differs between openai versions (request is required in newer ones)
     error = APIConnectionError.__new__(APIConnectionError)
