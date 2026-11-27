@@ -4,7 +4,7 @@ Data pipeline of the RADAR project: reproducible, LLM-based extraction of decisi
 
 Developed at the Institute of Data-Driven Technologies (IDT), FH Aachen.
 
-> **Status:** early development. Collection (YouTube), sampling, LLM annotation runs and a local tool for human annotation are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet; analysis is in progress.
+> **Status:** early development. Collection (YouTube), sampling, LLM annotation runs and a local tool for human annotation are implemented and available via the `radar` command. Mapping (embeddings and clustering) is implemented as a library function without a CLI command yet. Of the analysis, only the quote fidelity of runs exists so far (`radar quotes`); weights and time series are in progress.
 
 ## Purpose
 
@@ -20,7 +20,7 @@ The pipeline is a research tool. It collects public discussions on a topic, extr
 | Sampling | Freezes a cleaned set of posts as input for annotation | `sample`, `sample_post` |
 | Annotation | Extracts criteria per post, by an LLM or a human annotator | `annotation_run`, `llm_run`, `human_run`, `batch`, `annotation`, `criterion_mention` |
 | Mapping | Embeds criterion labels and clusters them into canonical criteria | `embedding_config`, `embedding`, `mapping_run`, `criterion`, `assignment` |
-| Analysis | Salience weights and time series, computed as SQL views | — |
+| Analysis | Computes from the stored data and stores nothing: quote fidelity per run (implemented), salience weights and time series as SQL views (planned) | — |
 
 The full data model with diagrams is documented in [docs/data-model.md](docs/data-model.md).
 
@@ -40,7 +40,8 @@ The full data model with diagrams is documented in [docs/data-model.md](docs/dat
 - Alembic for schema migrations
 - OpenAI Python SDK for LLM access via OpenAI-compatible APIs (KI:connect.NRW, IDT)
 - Flask for the local annotation tool (one static page, no build step, nothing loaded from the internet)
-- sentence-transformers (F2LLM) for embeddings, scikit-learn and HDBSCAN for clustering, UMAP for visualisation
+- Embeddings from an OpenAI-compatible API or a local sentence-transformers model (F2LLM); UMAP to reduce their dimensions, scikit-learn (HDBSCAN, agglomerative) to cluster them
+- pytest; the tests use temporary databases and faked APIs
 
 ## Setup
 
@@ -76,6 +77,8 @@ Create the database schema (once per database):
 uv run alembic upgrade head
 ```
 
+Run the same command again whenever new migrations arrive, for each database (test and production). A migration can also correct stored data: `271812c08c36` replaces video titles taken from the search results (HTML-escaped, mentions in plain text) by the titles stored with the video details.
+
 After changing a model:
 
 ```bash
@@ -92,23 +95,33 @@ Run the tests:
 uv run pytest
 ```
 
+The tests need no API keys and no `.env`: they work on temporary databases, with a fixed test key for the pseudonyms and with faked YouTube and LLM APIs. Tests that call the real LLM APIs are skipped unless `RADAR_LIVE_TESTS=1` is set.
+
 ## Usage
 
 All stages are run with the `radar` command (`uv run radar --help`, `uv run radar <command> --help`).
 `--db prod` selects the production database (default: test); `--sql` logs every SQL statement.
 
 ```bash
-uv run radar collect "E-Auto" "Verbrenner-Aus" --max-videos 25   # search YouTube, store videos and comments
-uv run radar sample e-auto-main "E-Auto"                          # load, filter, freeze (prints the attrition)
-uv run radar subset e-auto-300 e-auto-main 300 --seed 42          # reproducible random subset
-uv run radar run e-auto-300 extraction_v1 --context text+video_title   # LLM annotation run
-uv run radar resume 7                                             # continue an aborted run
-uv run radar runs                                                 # list runs
-uv run radar show 7                                               # results: stance, criteria, quotes
-uv run radar models kiconnect                                     # model ids of a provider
+uv run radar collect "Elektroautos" "Verbrenner-Aus" --max-videos 10     # search YouTube, store videos and comments
+uv run radar sample elektroautos-alle "Elektroautos"                     # load, filter, freeze (prints the attrition)
+uv run radar subset elektroautos-llm elektroautos-alle 5000 --seed 42    # reproducible random subset
+uv run radar subset elektroautos-human elektroautos-llm 200              # a subset of the subset
+uv run radar run elektroautos-llm extraction_v2 --batch-size 50          # LLM annotation run
+uv run radar resume 7                                                    # continue an aborted run
+uv run radar runs                                                        # list runs
+uv run radar show 7                                                      # results: stance, criteria, quotes
+uv run radar quotes 7 --list                                             # quote fidelity (see below)
+uv run radar models kiconnect                                            # model ids of a provider
 ```
 
-`run` options: `--provider idt|kiconnect`, `--model`, `--temperature`, `--batch-size`, `--context text|text+video_title`, `--thinking/--no-thinking`, `--max-rounds`, `--workers`. Unset options use the defaults in the code. Every command that stores something refuses to run with uncommitted code changes unless `--allow-dirty` is given.
+`run` options: `--provider idt|kiconnect`, `--model`, `--temperature`, `--batch-size`, `--context text|text+video_title|text+video_title+parent`, `--thinking/--no-thinking`, `--json-mode/--no-json-mode`, `--max-rounds`, `--workers`. Unset options use the defaults of the config (`config.example.toml`, single values overridden by a local `config.toml`). Every command that stores something refuses to run with uncommitted changes in `src/`, `migrations/` or `uv.lock` unless `--allow-dirty` is given: the stored `code_version` would not describe the code and the library versions that actually ran.
+
+**Sampling.** `sample` takes the comments of a topic (replies included; `--include-root-posts` adds the videos themselves) and applies three filters in this order: posts without any letters, posts with fewer than `min_words` words, and duplicates (the earliest post per text is kept). Links and @-mentions count neither as letters nor as words, so a reply that starts with a mention is treated like the same text as a top-level comment. `--after`/`--before` are UTC unless the value carries an offset (`2026-01-01T00:00+01:00`), which is converted. The arguments and the number of posts left after each filter are stored in `sample.definition`.
+
+**Context.** What the LLM gets besides a comment is the context strategy of the run: `text` (nothing), `text+video_title` (the title of the video as field `video`) or `text+video_title+parent` (for a reply also the comment it stands below, as field `antwort_auf`). On YouTube that is always the top-level comment of the thread; a reply to another reply names it only by a mention. The prompt has to explain the fields it gets: `extraction_v3` is `extraction_v2` plus the description of `antwort_auf`.
+
+**Quote fidelity.** The prompt asks for quotes copied word for word from the comment. `quotes` prints per run how many criterion mentions have a quote and how many of these quotes really occur in their comment (exact string, as the annotation tool demands it from humans); `--list` prints the others next to their comment. Nothing is stored for this, the value is computed from `criterion_mention.quote` and `post.text`. It only tells that a quote was copied, not that it is complete or supports the criterion.
 
 Prompts live in `prompts/` and are stored as prompt versions under their file name. A prompt that has been used in a run must not be edited; save changes as a new file (e.g. `extraction_v2.txt`).
 
@@ -117,7 +130,7 @@ Prompts live in `prompts/` and are stored as prompt versions under their file na
 Humans annotate the same samples as the LLMs, in a local tool that writes directly to the database:
 
 ```bash
-uv run radar --db prod annotate e-auto-300 extraction_v2 --annotator Anna   # opens http://127.0.0.1:8765/
+uv run radar --db prod annotate elektroautos-human extraction_v2 --annotator Anna   # opens http://127.0.0.1:8765/
 uv run radar --db prod export-human 12 exports/run-12.json                  # write a human run to a file
 uv run radar --db prod import-human exports/run-12.json                     # read it into another database
 ```
@@ -126,7 +139,7 @@ uv run radar --db prod import-human exports/run-12.json                     # re
 
 In the tool, mark a passage of the comment with the mouse (it becomes the quote), name the criterion, choose its sentiment and add it; a criterion without quote is possible. Choose the stance of the comment and save. "Keine Kriterien" stores an annotation without criteria, which is a result of its own and different from a comment not annotated yet. "Zurück" goes to the previous comment to correct it. Keys: `1`–`4` set the stance, `Enter` saves and moves on (inside the criterion field it adds the criterion).
 
-- The prompt version is shown as guideline, with the topic inserted: humans read the very text the LLM gets. The title of the video is always shown, which corresponds to the LLM context `text+video_title`.
+- The prompt version is shown as guideline, with the topic inserted: humans read the very text the LLM gets. The title of the video is always shown and, for a reply, the comment it stands below (as context only: quotes can be marked in the comment itself, not there). That corresponds to the LLM context `text+video_title+parent`; an LLM run that is to be compared with human annotations should use this strategy.
 - Annotation is blind: results of other runs (LLM or human) are never shown.
 - Values are stored as in LLM runs: stance `pro`/`contra`/`mixed`/`unclear`, sentiment `positive`/`negative`/`neutral`; each criterion once per comment; a quote must occur word for word in the comment.
 - Once a run is input of a mapping run it is locked and only shown, because the mapping refers to its criteria.
@@ -151,6 +164,7 @@ Help against typos and varying spellings of the same criterion:
 radar-pipeline/
 ├── src/radar/
 │   ├── __init__.py          # ROOT path, loads .env
+│   ├── config.py            # settings: config.example.toml, overridden by a local config.toml
 │   ├── privacy.py           # pseudonymisation of authors and @-mentions
 │   ├── provenance.py        # code_version: Git commit of the running code
 │   ├── db/
@@ -166,18 +180,19 @@ radar-pipeline/
 │   │                        # human/ (annotation tool: app.py server, store.py database access,
 │   │                        # transfer.py export/import, static/index.html the page)
 │   ├── mapping/             # embed.py (embedding models, templates), cluster.py (UMAP, clustering, naming), map.py (mapping run)
+│   ├── analysis/            # reads only: quotes.py (quote fidelity of runs)
 │   └── cli.py               # `radar` command
 ├── prompts/                 # prompt templates, versioned by file name
-├── config.example.toml      # LLM and embedding models (copy to config.toml to change locally)
-├── docs/                    # documentation, data model diagrams
-├── migrations/              # Alembic migrations
-├── tests/
-└── data/                    # local database (not in the repository)
+├── config.example.toml      # every setting with its default (a local config.toml overrides single values)
+├── docs/                    # data model diagrams, sequence diagrams of collection and mapping
+├── migrations/              # Alembic migrations (schema changes and corrections of stored data)
+├── tests/                   # pytest; conftest.py provides a temporary database
+└── data/                    # local databases (not in the repository)
 ```
 
 ## Data protection
 
-- Author names are pseudonymised **on ingestion** with a keyed hash (HMAC) before anything is stored, including raw API responses. The key (`SALT_HEX` in `.env`) is not part of the repository. @-mentions in texts are pseudonymised the same way.
+- Author names are pseudonymised **on ingestion** with a keyed hash (HMAC) before anything is stored, including raw API responses. The key (`SALT_HEX` in `.env`) is not part of the repository. @-mentions in comment texts, video titles and descriptions are pseudonymised the same way.
 - Collected data (database, exports, CSV files) and credentials are excluded via `.gitignore` and must never be committed.
 - Data is processed for scientific text and data mining under § 60d UrhG.
 
@@ -186,6 +201,7 @@ radar-pipeline/
 - Code, identifiers and database names are in English.
 - All timestamps are stored in UTC.
 - JSON columns are serialised with sorted keys so that equal parameters compare equal.
+- The functions of a stage get the database session from their caller (the CLI opens it) and never open one themselves, so they run against any database, also a temporary one in a test. Functions that carry out a whole run commit themselves, step by step (`collect_youtube`, `run_llm`); `create_sample` and `create_subset` leave the commit to the caller. Exception so far: `mapping.map_criteria` still opens its own session.
 
 ## License
 
