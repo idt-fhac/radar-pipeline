@@ -35,9 +35,10 @@ thinking = true                    # reasoning phase of Qwen models
 json_mode = true                   # server enforces valid JSON (response_format json_object)
 # What the LLM gets besides the comment: "text" (nothing), "text+video_title" or
 # "text+video_title+parent" (a reply also gets the comment it stands below; needs a prompt
-# that explains the field "antwort_auf", e.g. extraction_v3). The annotation tool always
-# shows humans the title and, for a reply, that comment.
-context_strategy = "text+video_title"
+# that explains the field "antwort_auf": extraction_v3, not extraction_v1 or v2). The
+# annotation tool always shows humans the title and, for a reply, that comment, so the
+# default gives an LLM the same context as a human annotator.
+context_strategy = "text+video_title+parent"
 
 # --- Annotation by hand: local web tool (`radar annotate`) -----------------------------------
 

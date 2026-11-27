@@ -107,7 +107,7 @@ uv run radar collect "Elektroautos" "Verbrenner-Aus" --max-videos 10     # searc
 uv run radar sample elektroautos-alle "Elektroautos"                     # load, filter, freeze (prints the attrition)
 uv run radar subset elektroautos-llm elektroautos-alle 5000 --seed 42    # reproducible random subset
 uv run radar subset elektroautos-human elektroautos-llm 200              # a subset of the subset
-uv run radar run elektroautos-llm extraction_v2 --batch-size 50          # LLM annotation run
+uv run radar run elektroautos-llm extraction_v3 --batch-size 50          # LLM annotation run
 uv run radar resume 7                                                    # continue an aborted run
 uv run radar runs                                                        # list runs
 uv run radar show 7                                                      # results: stance, criteria, quotes
@@ -119,18 +119,18 @@ uv run radar models kiconnect                                            # model
 
 **Sampling.** `sample` takes the comments of a topic (replies included; `--include-root-posts` adds the videos themselves) and applies three filters in this order: posts without any letters, posts with fewer than `min_words` words, and duplicates (the earliest post per text is kept). Links and @-mentions count neither as letters nor as words, so a reply that starts with a mention is treated like the same text as a top-level comment. `--after`/`--before` are UTC unless the value carries an offset (`2026-01-01T00:00+01:00`), which is converted. The arguments and the number of posts left after each filter are stored in `sample.definition`.
 
-**Context.** What the LLM gets besides a comment is the context strategy of the run: `text` (nothing), `text+video_title` (the title of the video as field `video`) or `text+video_title+parent` (for a reply also the comment it stands below, as field `antwort_auf`). On YouTube that is always the top-level comment of the thread; a reply to another reply names it only by a mention. The prompt has to explain the fields it gets: `extraction_v3` is `extraction_v2` plus the description of `antwort_auf`.
+**Context.** What the LLM gets besides a comment is the context strategy of the run: `text` (nothing), `text+video_title` (the title of the video as field `video`) or `text+video_title+parent` (for a reply also the comment it stands below, as field `antwort_auf`). On YouTube that is always the top-level comment of the thread; a reply to another reply names it only by a mention. The default is `text+video_title+parent`. The prompt has to explain the fields it gets: `extraction_v3` is `extraction_v2` plus the description of `antwort_auf`, so it belongs to the default; run `extraction_v1` or `extraction_v2` with `--context text+video_title`.
 
 **Quote fidelity.** The prompt asks for quotes copied word for word from the comment. `quotes` prints per run how many criterion mentions have a quote and how many of these quotes really occur in their comment (exact string, as the annotation tool demands it from humans); `--list` prints the others next to their comment. Nothing is stored for this, the value is computed from `criterion_mention.quote` and `post.text`. It only tells that a quote was copied, not that it is complete or supports the criterion.
 
-Prompts live in `prompts/` and are stored as prompt versions under their file name. A prompt that has been used in a run must not be edited; save changes as a new file (e.g. `extraction_v2.txt`).
+Prompts live in `prompts/` and are stored as prompt versions under their file name. A prompt that has been used in a run must not be edited; save changes as a new file (e.g. `extraction_v4.txt`).
 
 ### Human annotation
 
 Humans annotate the same samples as the LLMs, in a local tool that writes directly to the database:
 
 ```bash
-uv run radar --db prod annotate elektroautos-human extraction_v2 --annotator Anna   # opens http://127.0.0.1:8765/
+uv run radar --db prod annotate elektroautos-human extraction_v3 --annotator Anna   # opens http://127.0.0.1:8765/
 uv run radar --db prod export-human 12 exports/run-12.json                  # write a human run to a file
 uv run radar --db prod import-human exports/run-12.json                     # read it into another database
 ```
@@ -139,7 +139,7 @@ uv run radar --db prod import-human exports/run-12.json                     # re
 
 In the tool, mark a passage of the comment with the mouse (it becomes the quote), name the criterion, choose its sentiment and add it; a criterion without quote is possible. Choose the stance of the comment and save. "Keine Kriterien" stores an annotation without criteria, which is a result of its own and different from a comment not annotated yet. "Zurück" goes to the previous comment to correct it. Keys: `1`–`4` set the stance, `Enter` saves and moves on (inside the criterion field it adds the criterion).
 
-- The prompt version is shown as guideline, with the topic inserted: humans read the very text the LLM gets. The title of the video is always shown and, for a reply, the comment it stands below (as context only: quotes can be marked in the comment itself, not there). That corresponds to the LLM context `text+video_title+parent`; an LLM run that is to be compared with human annotations should use this strategy.
+- The prompt version is shown as guideline, with the topic inserted: humans read the very text the LLM gets. The title of the video is always shown and, for a reply, the comment it stands below (as context only: quotes can be marked in the comment itself, not there). That corresponds to the LLM context `text+video_title+parent`, the default; an LLM run that is to be compared with human annotations must use this strategy and the same prompt.
 - Annotation is blind: results of other runs (LLM or human) are never shown.
 - Values are stored as in LLM runs: stance `pro`/`contra`/`mixed`/`unclear`, sentiment `positive`/`negative`/`neutral`; each criterion once per comment; a quote must occur word for word in the comment.
 - Once a run is input of a mapping run it is locked and only shown, because the mapping refers to its criteria.

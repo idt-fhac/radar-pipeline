@@ -11,6 +11,7 @@ from radar.annotation import prompts, run_llm
 from radar.annotation.human import store
 from radar.annotation.human.app import STATIC_DIR, create_app
 from radar.annotation.run_llm import CONTEXT_STRATEGIES, build_items, load_run, open_posts, parent_comment
+from radar.config import EXAMPLE_FILE, load
 from radar.db.models.annotation import Sample
 from radar.db.models.collection import Post
 
@@ -108,6 +109,12 @@ def test_run_with_parent_strategy_sends_and_stores_it(Session, monkeypatch):
 
 def test_parent_strategy_is_a_known_context_strategy():
     assert CONTEXT_STRATEGIES == ['text', 'text+video_title', 'text+video_title+parent']
+
+
+def test_default_strategy_gives_the_llm_what_the_tool_shows_humans():
+    # the tool always shows the title and the parent comment; read from the file in the
+    # repository, because a local config.toml may override the default on this computer
+    assert load(EXAMPLE_FILE)['annotation']['context_strategy'] == 'text+video_title+parent'
 
 
 # --- the annotation tool ---------------------------------------------------------------------
