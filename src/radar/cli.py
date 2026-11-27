@@ -144,11 +144,13 @@ def given(args, *names):
 
 
 def cmd_collect(args):
+    from radar.db.engine import Session
     from radar.collection.collect import collect_youtube
     options = {'max_videos': args.max_videos, 'max_threads_per_video': args.max_threads,
                'comment_order': args.order, 'replies': args.replies}
-    collect_youtube(args.topic, args.search_term, allow_dirty=args.allow_dirty,
-                    **{key: value for key, value in options.items() if value is not None})
+    with Session() as session:
+        collect_youtube(session, args.topic, args.search_term, allow_dirty=args.allow_dirty,
+                        **{key: value for key, value in options.items() if value is not None})
 
 
 def cmd_sample(args):
