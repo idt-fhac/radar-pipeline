@@ -1,15 +1,19 @@
+import os
+
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import matplotlib.pyplot as plt
 import umap
 
+# .env is loaded centrally in radar/__init__.py, which runs before this module
+ACCESS_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "codefuse-ai/F2LLM-v2-1.7B"
 PROMPT = ("Instruct: Die folgenden Begriffe stammen aus dem Bereich "
           "{topic}. Identifiziere die semantische Kategorie des Terms\nQuery: ")
 # rendered text the model actually sees: the prompt is prepended to each criterion
 TEMPLATE = PROMPT + "{label}"
 
-model = SentenceTransformer(MODEL, device="cpu", model_kwargs={"torch_dtype": "bfloat16"})
+model = SentenceTransformer(MODEL, device="cpu", token=ACCESS_TOKEN, model_kwargs={"torch_dtype": "bfloat16"})
 
 def embed(topic, criteria):
 
@@ -19,7 +23,8 @@ def embed(topic, criteria):
 
 
 def main():
-    terms = ["Sicherheit", "Gefährlichkeit", "Preis", "teuer", "Preis-Leistung", "Geschwindigkeit", "Fahrspaß", "Reichweite"]
+    terms = ["Sicherheit", "Gefährlichkeit", "Risiko", "Airbag-Qualität", "Crashtest-Ergebnis", "Bremsweg", "Bremsleistung", "Spurhalteassistent", "Preis", "Anschaffungskosten", "Spritverbrauch", "Kraftstoffverbrauch", "Versicherungskosten", "Sitzkomfort", "Innenraumlautstärke", "Fahrkomfort", "Wiederverkaufswert", "Kofferraumvolumen", "Markenimage", "Farbauswahl"]
+
     context = "E-Autos"
 
     emb = embed(context, terms)
