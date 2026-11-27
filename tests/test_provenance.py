@@ -61,6 +61,7 @@ def repository(tmp_path, monkeypatch):
     (tmp_path / 'migrations').mkdir()
     (tmp_path / 'src' / 'code.py').write_text('x = 1\n', encoding='utf-8')
     (tmp_path / 'migrations' / 'first.py').write_text('y = 1\n', encoding='utf-8')
+    (tmp_path / 'uv.lock').write_text('version = 1\n', encoding='utf-8')
     (tmp_path / 'README.md').write_text('readme\n', encoding='utf-8')
     git('init')
     git('add', '.')
@@ -80,7 +81,11 @@ def test_changes_outside_the_code_paths_do_not_count(repository):
     assert not get_code_version().endswith('-dirty')
 
 
-@pytest.mark.parametrize('path', ['src/code.py', 'migrations/first.py'])
+def test_code_paths_cover_code_migrations_and_library_versions():
+    assert CODE_PATHS == ['src', 'migrations', 'uv.lock']
+
+
+@pytest.mark.parametrize('path', ['src/code.py', 'migrations/first.py', 'uv.lock'])
 def test_changed_code_counts(repository, path):
     (repository / path).write_text('changed = True\n', encoding='utf-8')
     with pytest.raises(RuntimeError, match='uncommitted changes'):

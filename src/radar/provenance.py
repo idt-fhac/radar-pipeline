@@ -5,7 +5,9 @@ import subprocess
 from radar import ROOT
 
 # Only changes here alter what a pipeline run executes; tests or docs do not.
-CODE_PATHS = ['src', 'migrations']
+# uv.lock pins the versions of all libraries (`uv run` installs exactly these): another
+# version of e.g. UMAP or scikit-learn can change results just like a change in src/.
+CODE_PATHS = ['src', 'migrations', 'uv.lock']
 
 
 def git(*args):
